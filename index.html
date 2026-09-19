@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#0f172a" />
-  <title>Rack Manager｜機櫃管理工具 V1</title>
+  <title>Rack Manager｜機櫃管理工具 V1.1</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -13,7 +13,7 @@
       <div class="brand-mark">RM</div>
       <div>
         <h1>Rack Manager</h1>
-        <p>機櫃管理工具 V1</p>
+        <p>機櫃管理工具 V1.1</p>
       </div>
     </div>
 
@@ -57,31 +57,37 @@
         <p class="hint">拖曳設備到中間機櫃；也可雙擊設備快速加入第一個可用位置。</p>
 
         <div class="palette" id="palette">
-          <div class="palette-item type-network" draggable="true" data-type="switch" data-name="網路交換器" data-height="1">
+          <div class="palette-item type-network" draggable="true" data-type="switch" data-name="網路交換器" data-height="1" data-installation="rack">
             <div class="palette-icon">SW</div><div><strong>網路交換器</strong><span>1U</span></div>
           </div>
-          <div class="palette-item type-network" draggable="true" data-type="router" data-name="路由器 / 防火牆" data-height="1">
+          <div class="palette-item type-network" draggable="true" data-type="router" data-name="路由器 / 防火牆" data-height="1" data-installation="rack">
             <div class="palette-icon">RT</div><div><strong>路由器 / 防火牆</strong><span>1U</span></div>
           </div>
-          <div class="palette-item type-cabling" draggable="true" data-type="patch" data-name="Patch Panel" data-height="1">
+          <div class="palette-item type-cabling" draggable="true" data-type="patch" data-name="Patch Panel" data-height="1" data-installation="rack">
             <div class="palette-icon">PP</div><div><strong>Patch Panel</strong><span>1U</span></div>
           </div>
-          <div class="palette-item type-cabling" draggable="true" data-type="cable" data-name="理線架" data-height="1">
+          <div class="palette-item type-cabling" draggable="true" data-type="cable" data-name="理線架" data-height="1" data-installation="rack">
             <div class="palette-icon">CM</div><div><strong>理線架</strong><span>1U</span></div>
           </div>
-          <div class="palette-item type-server" draggable="true" data-type="server" data-name="伺服器" data-height="2">
+          <div class="palette-item type-server" draggable="true" data-type="server" data-name="伺服器" data-height="2" data-installation="rack">
             <div class="palette-icon">SV</div><div><strong>伺服器</strong><span>2U</span></div>
           </div>
-          <div class="palette-item type-storage" draggable="true" data-type="nas" data-name="NAS" data-height="2">
-            <div class="palette-icon">NS</div><div><strong>NAS</strong><span>2U</span></div>
+          <div class="palette-item type-storage" draggable="true" data-type="nas" data-name="機架式 NAS" data-height="2" data-installation="rack">
+            <div class="palette-icon">NS</div><div><strong>機架式 NAS</strong><span>2U · 機架式</span></div>
           </div>
-          <div class="palette-item type-power" draggable="true" data-type="ups" data-name="UPS" data-height="3">
+          <div class="palette-item type-storage" draggable="true" data-type="nas" data-name="桌上型 NAS" data-height="3" data-installation="shelf">
+            <div class="palette-icon">DN</div><div><strong>桌上型 NAS</strong><span>3U · 層板式</span></div>
+          </div>
+          <div class="palette-item type-other" draggable="true" data-type="other" data-name="桌上型電腦" data-height="4" data-installation="tower">
+            <div class="palette-icon">PC</div><div><strong>桌上型電腦</strong><span>4U · 塔式</span></div>
+          </div>
+          <div class="palette-item type-power" draggable="true" data-type="ups" data-name="UPS" data-height="3" data-installation="rack">
             <div class="palette-icon">UP</div><div><strong>UPS</strong><span>3U</span></div>
           </div>
-          <div class="palette-item type-power" draggable="true" data-type="pdu" data-name="PDU" data-height="1">
+          <div class="palette-item type-power" draggable="true" data-type="pdu" data-name="PDU" data-height="1" data-installation="rack">
             <div class="palette-icon">PD</div><div><strong>PDU</strong><span>1U</span></div>
           </div>
-          <div class="palette-item type-other" draggable="true" data-type="shelf" data-name="層板 / 其他設備" data-height="2">
+          <div class="palette-item type-other" draggable="true" data-type="shelf" data-name="層板 / 其他設備" data-height="2" data-installation="shelf">
             <div class="palette-icon">OT</div><div><strong>層板 / 其他設備</strong><span>2U</span></div>
           </div>
         </div>
@@ -103,9 +109,19 @@
           <h2 id="rackTitle">Rack-01</h2>
           <p id="rackSubtitle">42U 機櫃</p>
         </div>
-        <div class="face-toggle" role="tablist">
-          <button class="active" data-face="front">FRONT 正面</button>
-          <button data-face="rear">REAR 背面</button>
+        <div class="workspace-controls">
+          <label class="zoom-control">顯示比例
+            <select id="rackZoom" class="field compact">
+              <option value="1">100%</option>
+              <option value="0.9">90%</option>
+              <option value="0.8">80%</option>
+              <option value="0.7">70%</option>
+            </select>
+          </label>
+          <div class="face-toggle" role="tablist">
+            <button class="active" data-face="front">FRONT 正面</button>
+            <button data-face="rear">REAR 背面</button>
+          </div>
         </div>
       </div>
 
@@ -137,6 +153,14 @@
               </div>
             </div>
           </div>
+
+          <section class="peripheral-section hidden" id="peripheralSection">
+            <div class="peripheral-heading">
+              <div><span class="export-label">PERIPHERAL DEVICES</span><h4>機櫃周邊設備</h4></div>
+              <span class="badge" id="peripheralCount">0 台</span>
+            </div>
+            <div class="peripheral-list" id="peripheralList"></div>
+          </section>
         </div>
       </div>
     </section>
@@ -174,7 +198,7 @@
       </section>
 
       <section class="panel-section">
-        <h2>本面設備清單</h2>
+        <h2>設備清單</h2>
         <div class="device-list" id="deviceList"></div>
       </section>
     </aside>
@@ -234,6 +258,14 @@
             <option value="other">其他</option>
           </select>
         </label>
+        <label>安裝形式
+          <select class="field" id="deviceInstallationInput">
+            <option value="rack">機架式</option>
+            <option value="shelf">層板式</option>
+            <option value="tower">桌上型 / 塔式</option>
+            <option value="external">外部設備</option>
+          </select>
+        </label>
         <label>高度（U）<input class="field" id="deviceHeightInput" type="number" min="1" max="20" required /></label>
         <label>安裝面
           <select class="field" id="deviceSideInput">
@@ -242,6 +274,7 @@
           </select>
         </label>
 
+        <label>放置位置<input class="field" id="devicePlacementInput" maxlength="100" placeholder="例如：層板、機櫃旁、機櫃上方" /></label>
         <label>廠牌<input class="field" id="deviceBrandInput" maxlength="80" /></label>
         <label>型號<input class="field" id="deviceModelInput" maxlength="100" /></label>
         <label>序號<input class="field" id="deviceSerialInput" maxlength="100" /></label>
