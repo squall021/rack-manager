@@ -2,7 +2,6 @@
   "use strict";
 
   const STORAGE_KEY="rack-manager-v1-state";
-  const RESTORE_KEY="rack-manager-v13-restore";
   const BASE_ROW_HEIGHT=32;
   const $=id=>document.getElementById(id);
   const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
@@ -182,6 +181,42 @@
     const bottom=v.u-v.height+1,wtext=d.installation==="rack"?"":` · ${Math.round(h.widthPct)}%`;
     setLabel(rs.label,`${v.height>1?`U${bottom}–U${v.u}`:`U${v.u}`} · ${v.height}U${wtext}${ok?"":" · 位置衝突"}`,e.clientX,e.clientY,ok);
   }
+  function syncStateIntoCore(nextState,deviceId){
+    // 透過既有 JSON 匯入流程更新 app.js closure 內的 state，避免 reload 與 beforeunload 覆蓋。
+    const input=$("jsonImport");
+    if(!input){writeState(nextState);return;}
+    try{
+      const file=new File([JSON.stringify(nextState)],"rack-manager-v13-sync.json",{type:"application/json"});
+      const transfer=new DataTransfer();
+      transfer.items.add(file);
+      input.files=transfer.files;
+
+      const originalConfirm=window.confirm;
+      let autoApprove=true;
+      window.confirm=function(message){
+        if(autoApprove && String(message||"").includes("將匯入")){
+          autoApprove=false;
+          window.confirm=originalConfirm;
+          return true;
+        }
+        return originalConfirm.apply(this,arguments);
+      };
+
+      input.dispatchEvent(new Event("change",{bubbles:true}));
+      setTimeout(()=>{
+        if(window.confirm!==originalConfirm) window.confirm=originalConfirm;
+        const el=document.querySelector(`#rackGrid .rack-device[data-id="${CSS.escape(deviceId)}"]`);
+        el?.click();
+        document.querySelectorAll("#toastStack .toast").forEach(t=>{
+          if(t.textContent.includes("JSON 備份已匯入")) t.textContent="設備尺寸已更新";
+        });
+      },120);
+    }catch(err){
+      console.error("V1.3.1 state sync failed",err);
+      writeState(nextState);
+    }
+  }
+
   function endResize(e,cancel=false){
     const rs=resize;if(!rs||(e&&e.pointerId!==rs.pointerId))return;
     if(e){e.preventDefault();e.stopImmediatePropagation();}
@@ -190,9 +225,8 @@
     if(!d||cancel||!rs.valid||!rs.preview){rs.el.style.cssText=rs.cssText;rs.el.classList.remove("v13-resizing","v13-resize-ok","v13-resize-bad");return;}
     const p=rs.preview,changed=d.u!==p.u||d.height!==p.height||Math.abs((d.widthPct||100)-p.widthPct)>.1||Math.abs((d.xPct||50)-p.xPct)>.1;
     if(!changed){rs.el.style.cssText=rs.cssText;return;}
-    d.u=p.u;d.height=p.height;if(d.installation!=="rack"){d.widthPct=p.widthPct;d.xPct=p.xPct;}rack.updatedAt=new Date().toISOString();rs.state.version=1.3;writeState(rs.state);
-    sessionStorage.setItem(RESTORE_KEY,JSON.stringify({y:window.scrollY,id:d.id}));
-    location.reload();
+    d.u=p.u;d.height=p.height;if(d.installation!=="rack"){d.widthPct=p.widthPct;d.xPct=p.xPct;}rack.updatedAt=new Date().toISOString();rs.state.version=1.31;
+    syncStateIntoCore(rs.state,d.id);
   }
   document.addEventListener("pointerdown",e=>{
     const h=e.target.closest?.(".v13-resize-handle");if(!h)return;
@@ -203,9 +237,4 @@
   document.addEventListener("pointercancel",e=>{if(resize)endResize(e,true);},true);
   document.addEventListener("keydown",e=>{if(e.key==="Escape"&&resize){endResize(null,true);e.preventDefault();}});
 
-  // Resize 後回到原本卷動位置並重新選取設備。
-  try{
-    const restore=JSON.parse(sessionStorage.getItem(RESTORE_KEY)||"null");
-    if(restore){sessionStorage.removeItem(RESTORE_KEY);setTimeout(()=>{window.scrollTo(0,Number(restore.y)||0);const el=document.querySelector(`#rackGrid .rack-device[data-id="${CSS.escape(restore.id)}"]`);el?.click();},80);}
-  }catch{}
 })();
