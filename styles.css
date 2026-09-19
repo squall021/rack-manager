@@ -29,6 +29,7 @@ button{cursor:pointer}
 .dropdown-menu button:hover{background:#f1f5f9}
 .app-layout{display:grid;grid-template-columns:285px minmax(480px,1fr) 320px;min-height:calc(100vh - 72px)}
 .panel{background:var(--panel);border-right:1px solid var(--line);min-width:0}
+.left-panel{position:sticky;top:72px;align-self:start;height:calc(100vh - 72px);overflow-y:auto;overscroll-behavior:contain}
 .right-panel{border-right:0;border-left:1px solid var(--line);position:sticky;top:72px;align-self:start;height:calc(100vh - 72px);overflow-y:auto;overscroll-behavior:contain}
 .panel-section{padding:18px;border-bottom:1px solid var(--line)}
 .right-panel .panel-section:first-child{position:sticky;top:0;background:#fff;z-index:5;box-shadow:0 6px 16px rgba(15,23,42,.04)}
@@ -43,7 +44,7 @@ button{cursor:pointer}
 .link-btn{border:0;background:transparent;color:var(--accent);font-weight:800;padding:0}
 .hint{font-size:12px;line-height:1.5;color:var(--muted);margin:0 0 12px}
 .palette{display:flex;flex-direction:column;gap:8px}
-.palette-item{display:flex;align-items:center;gap:10px;border:1px solid #dbe3ed;background:#fff;border-radius:10px;padding:9px;cursor:grab;user-select:none;transition:.15s}
+.palette-item{display:flex;align-items:center;gap:10px;border:1px solid #dbe3ed;background:#fff;border-radius:10px;padding:9px;cursor:grab;user-select:none;transition:.15s;touch-action:none;-webkit-user-drag:none}
 .palette-item:hover{transform:translateX(2px);border-color:#aab7c9;box-shadow:0 5px 15px rgba(15,23,42,.05)}
 .palette-item:active{cursor:grabbing}
 .palette-icon{width:34px;height:30px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:900;letter-spacing:.05em;background:#eef2ff;color:#3730a3;border:1px solid #d8def8}
@@ -84,7 +85,7 @@ kbd{background:#f1f5f9;border:1px solid #cbd5e1;border-bottom-width:2px;border-r
 .u-number.right{left:auto;right:0;border-right:0;border-left:1px solid #d9e0e8}
 .rack-grid.drop-ok{box-shadow:inset 0 0 0 3px #22c55e}
 .rack-grid.drop-bad{box-shadow:inset 0 0 0 3px #ef4444}
-.rack-device{position:absolute;left:48px;right:48px;border-radius:5px;border:1px solid rgba(15,23,42,.28);display:flex;align-items:center;justify-content:space-between;padding:3px 9px;gap:8px;color:#0f172a;overflow:hidden;z-index:3;cursor:grab;box-shadow:0 2px 5px rgba(15,23,42,.14);transition:box-shadow .15s,transform .15s}
+.rack-device{position:absolute;left:48px;border-radius:5px;border:1px solid rgba(15,23,42,.28);display:flex;align-items:center;justify-content:space-between;padding:3px 9px;gap:8px;color:#0f172a;overflow:hidden;z-index:3;cursor:grab;box-shadow:0 2px 5px rgba(15,23,42,.14);transition:box-shadow .15s,transform .15s;touch-action:none;-webkit-user-drag:none;user-select:none}
 .rack-device:hover{box-shadow:0 4px 10px rgba(15,23,42,.2);transform:translateX(1px)}
 .rack-device.selected{outline:3px solid #2563eb;outline-offset:1px;z-index:4}
 .rack-device.locked{cursor:not-allowed}
@@ -93,9 +94,9 @@ kbd{background:#f1f5f9;border:1px solid #cbd5e1;border-bottom-width:2px;border-r
 .rack-device .device-main span{font-size:9px;opacity:.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rack-device .device-u{font-size:10px;font-weight:900;white-space:nowrap}
 .rack-device .lock-mark{font-size:10px;margin-right:4px}
-.rack-device.mount-shelf{left:78px;right:78px;border-radius:7px;border-bottom:5px solid #64748b;box-shadow:0 4px 0 #cbd5e1,0 5px 10px rgba(15,23,42,.12)}
+.rack-device.mount-shelf{border-radius:7px;border-bottom:5px solid #64748b;box-shadow:0 4px 0 #cbd5e1,0 5px 10px rgba(15,23,42,.12)}
 .rack-device.mount-shelf::after{content:"SHELF";position:absolute;right:6px;bottom:1px;font-size:7px;font-weight:900;letter-spacing:.12em;color:#475569;opacity:.7}
-.rack-device.mount-tower{left:31%;right:31%;border-radius:8px;min-width:120px;border:2px solid #64748b;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35),0 3px 9px rgba(15,23,42,.18)}
+.rack-device.mount-tower{border-radius:8px;min-width:72px;border:2px solid #64748b;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35),0 3px 9px rgba(15,23,42,.18)}
 .rack-device.mount-tower::before{content:"";position:absolute;right:8px;top:8px;width:5px;height:5px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 2px rgba(255,255,255,.7)}
 .rack-device.mount-tower .device-u{display:none}
 .rack-device.zoom-small .device-main span{display:none}
@@ -150,6 +151,16 @@ kbd{background:#f1f5f9;border:1px solid #cbd5e1;border-bottom-width:2px;border-r
 .form-grid label.full{grid-column:1/-1}
 .checkbox-label{flex-direction:row!important;align-items:center;justify-content:flex-start;padding-top:25px}
 .checkbox-label input{width:16px;height:16px}
+
+.pointer-drag-source{opacity:.38!important}
+.drag-ghost{position:fixed;left:0;top:0;z-index:9999;pointer-events:none;min-width:150px;max-width:240px;padding:9px 11px;border:1px solid #93c5fd;border-radius:9px;background:rgba(255,255,255,.96);box-shadow:0 12px 30px rgba(15,23,42,.22);display:flex;flex-direction:column;gap:2px;will-change:transform}
+.drag-ghost strong{font-size:12px;color:#1e293b}
+.drag-ghost span{font-size:9px;color:#64748b}
+.range-row{display:grid;grid-template-columns:minmax(0,1fr) 52px;align-items:center;gap:8px;min-height:38px}
+.range-row input[type="range"]{width:100%;accent-color:#2563eb}
+.range-row output{font-size:11px;text-align:center;background:#f1f5f9;border:1px solid #dbe3ed;border-radius:6px;padding:5px 4px;color:#475569;font-weight:800}
+.control-disabled{opacity:.48}
+
 .modal-actions{display:flex;align-items:center;gap:8px;border-top:1px solid #edf1f5;margin-top:20px;padding-top:16px}
 .spacer{flex:1}
 .toast-stack{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:100}
@@ -164,12 +175,12 @@ kbd{background:#f1f5f9;border:1px solid #cbd5e1;border-bottom-width:2px;border-r
 @media(max-width:760px){
   .topbar{height:auto;padding:12px;align-items:flex-start;gap:12px;position:relative}
   .top-actions{gap:6px}.top-actions .btn{font-size:11px;padding:7px 8px}
-  .app-layout{display:block}.left-panel,.right-panel{border:0}
+  .app-layout{display:block}.left-panel,.right-panel{border:0;position:static;height:auto;overflow:visible}
   .workspace{padding:14px 8px}.stats-row{grid-template-columns:1fr 1fr}
   .right-panel{display:block;position:static;height:auto;overflow:visible}
   .workspace-toolbar{align-items:flex-start}.workspace-controls{justify-content:flex-start}
   .peripheral-list{grid-template-columns:1fr}
-  .rack-device.mount-tower{left:25%;right:25%;min-width:100px}
+  .rack-device.mount-tower{min-width:64px}
   .form-grid,.form-grid.three{grid-template-columns:1fr}
   .checkbox-label{padding-top:0}
 }
