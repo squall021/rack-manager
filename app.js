@@ -35,7 +35,7 @@
   function makeDefaultState() {
     const rackId = uid("rack");
     return {
-      version: 1.1,
+      version: 1.2,
       activeRackId: rackId,
       activeFace: "front",
       zoom: 1,
@@ -48,7 +48,7 @@
 
   function normalizeState(raw) {
     if (!raw || !Array.isArray(raw.racks) || !raw.racks.length) return makeDefaultState();
-    raw.version = 1.1;
+    raw.version = 1.2;
     raw.activeFace = raw.activeFace === "rear" ? "rear" : "front";
     const zoom = Number(raw.zoom);
     raw.zoom = [1,0.9,0.8,0.7].includes(zoom) ? zoom : 1;
@@ -68,6 +68,9 @@
         d.u = d.installation === "external" ? null : clamp(parseInt(d.u)||1,1,r.units);
         d.side = d.side === "rear" ? "rear" : "front";
         d.placement ||= "";
+        const defaultWidth = defaultWidthForInstallation(d.installation);
+        d.widthPct = d.installation === "rack" ? 100 : clamp(Number(d.widthPct) || defaultWidth, 20, 100);
+        d.xPct = d.installation === "rack" ? 50 : clamp(Number.isFinite(Number(d.xPct)) ? Number(d.xPct) : 50, 0, 100);
         d.locked = !!d.locked;
         d.status ||= "正常";
       });
@@ -129,6 +132,30 @@
 
   function clamp(n,min,max){ return Math.max(min, Math.min(max,n)); }
   function rowHeight(){ return BASE_ROW_HEIGHT * (Number(state.zoom) || 1); }
+  function defaultWidthForInstallation(installation){
+    if(installation === "shelf") return 58;
+    if(installation === "tower") return 36;
+    return 100;
+  }
+  function horizontalRange(widthPct, xPct){
+    const width=clamp(Number(widthPct)||100,20,100);
+    const pos=clamp(Number(xPct)||0,0,100);
+    const start=(100-width)*(pos/100);
+    return {start,end:start+width,width};
+  }
+  function rangesOverlap(a,b){
+    return Math.max(a.start,b.start) < Math.min(a.end,b.end) - 0.15;
+  }
+  function horizontalLayoutPx(d){
+    if(d.installation === "rack") return {left:48,width:Math.max(80,rackGrid.clientWidth-96)};
+    const innerLeft=48;
+    const innerWidth=Math.max(120,rackGrid.clientWidth-96);
+    const widthPct=clamp(Number(d.widthPct)||defaultWidthForInstallation(d.installation),20,100);
+    const width=innerWidth*(widthPct/100);
+    const travel=Math.max(0,innerWidth-width);
+    const xPct=clamp(Number(d.xPct)||0,0,100);
+    return {left:innerLeft+travel*(xPct/100),width};
+  }
   function getActiveRack(){ return state.racks.find(r => r.id === state.activeRackId) || state.racks[0]; }
   function getSelectedDevice(){
     const rack = getActiveRack();
@@ -207,7 +234,11 @@
       el.className = `rack-device dev-${d.type}${mountClass}${smallClass}${d.id===selectedDeviceId?" selected":""}${d.locked?" locked":""}`;
       el.style.top = `${top}px`;
       el.style.height = `${height}px`;
-      el.draggable = !d.locked;
+      const hLayout=horizontalLayoutPx(d);
+      el.style.left=`${hLayout.left}px`;
+      el.style.width=`${hLayout.width}px`;
+      el.style.right="auto";
+      el.draggable = false;
       el.dataset.id = d.id;
       const uBottom = d.u - d.height + 1;
       el.title = `${d.name}｜${INSTALLATION_LABELS[d.installation]}｜U${uBottom}${d.height>1?`–U${d.u}`:""}`;
@@ -220,6 +251,7 @@
       `;
       el.addEventListener("click", e => {
         e.stopPropagation();
+        if(Date.now()<suppressClickUntil) return;
         selectedDeviceId = d.id;
         renderRack();
         renderInspector();
@@ -228,24 +260,14 @@
       });
       el.addEventListener("dblclick", e => {
         e.stopPropagation();
+        if(Date.now()<suppressClickUntil) return;
         openDeviceModal(d.id);
-      });
-      el.addEventListener("dragstart", e => {
-        if (d.locked) { e.preventDefault(); return; }
-        dragPayload = {kind:"existing", deviceId:d.id};
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", d.id);
-        setTimeout(()=>el.style.opacity=".45",0);
-      });
-      el.addEventListener("dragend", () => {
-        el.style.opacity="";
-        dragPayload = null;
-        clearDropState();
       });
       rackGrid.appendChild(el);
     });
 
     rackGrid.onclick = () => {
+      if(Date.now()<suppressClickUntil) return;
       selectedDeviceId = null;
       renderRack();
       renderInspector();
@@ -286,6 +308,8 @@
     $("inspectU").textContent = isExternal ? "周邊" : (d.height>1 ? `U${bottom}–U${d.u}` : `U${d.u}`);
     const details = [
       ["安裝形式", INSTALLATION_LABELS[d.installation] || "機架式"],
+      ["圖面寬度", (!isExternal && d.installation !== "rack") ? `${Math.round(d.widthPct)}%` : ""],
+      ["水平位置", (!isExternal && d.installation !== "rack") ? horizontalPositionLabel(d.xPct) : ""],
       ["放置位置", d.placement],
       ["安裝面", isExternal ? "—" : (d.side==="front"?"FRONT 正面":"REAR 背面")],
       ["高度", isExternal ? "—" : `${d.height}U`],
@@ -360,54 +384,85 @@
     });
   }
 
-  function canPlace(rack, topU, height, side, ignoreId=null) {
+  function canPlace(rack, topU, height, side, ignoreId=null, candidate={}) {
     const bottomU = topU-height+1;
     if (topU>rack.units || bottomU<1) return false;
+
+    const installation=candidate.installation || "rack";
+    const candidateRange=horizontalRange(
+      installation === "rack" ? 100 : (candidate.widthPct || defaultWidthForInstallation(installation)),
+      installation === "rack" ? 50 : (candidate.xPct ?? 50)
+    );
+
     return !rack.devices.some(d => {
       if (d.id===ignoreId || d.installation === "external" || d.side!==side) return false;
       const dBottom = d.u-d.height+1;
-      return !(topU < dBottom || bottomU > d.u);
+      const verticalOverlap = !(topU < dBottom || bottomU > d.u);
+      if(!verticalOverlap) return false;
+
+      if(installation === "rack" || d.installation === "rack") return true;
+
+      const existingRange=horizontalRange(d.widthPct || defaultWidthForInstallation(d.installation), d.xPct ?? 50);
+      return rangesOverlap(candidateRange,existingRange);
     });
   }
 
-  function pointerToTopU(e, height=1) {
+  function pointerToTopUFromClientY(clientY, height=1) {
     const rack = getActiveRack();
     const rect = rackGrid.getBoundingClientRect();
-    const y = clamp(e.clientY - rect.top, 0, rect.height-1);
+    const y = clamp(clientY - rect.top, 0, rect.height-1);
     let topU = rack.units - Math.floor(y / rowHeight());
     topU = clamp(topU, height, rack.units);
     return topU;
   }
 
-  function findFirstFreeTopU(rack,height,side) {
+  function pointerToXPctFromClientX(clientX, widthPct, offsetX=null) {
+    const rect=rackGrid.getBoundingClientRect();
+    const innerLeft=48;
+    const innerWidth=Math.max(120,rect.width-96);
+    const width=innerWidth*(clamp(Number(widthPct)||40,20,100)/100);
+    const travel=Math.max(0,innerWidth-width);
+    if(travel<=0) return 50;
+    const grabOffset=offsetX==null ? width/2 : clamp(offsetX,0,width);
+    const desiredLeft=clamp(clientX-rect.left-grabOffset,innerLeft,innerLeft+travel);
+    return clamp(((desiredLeft-innerLeft)/travel)*100,0,100);
+  }
+
+  function findFirstFreeTopU(rack,height,side,candidate={}) {
     for (let topU=rack.units; topU>=height; topU--) {
-      if (canPlace(rack,topU,height,side)) return topU;
+      if (canPlace(rack,topU,height,side,null,candidate)) return topU;
     }
     return null;
   }
 
-  function addDeviceFromPalette(data, topU=null) {
+  function addDeviceFromPalette(data, topU=null, xPct=null) {
     const rack = getActiveRack();
     const height = clamp(parseInt(data.height)||1,1,20);
     const installation = ["rack","shelf","tower","external"].includes(data.installation) ? data.installation : "rack";
+    const widthPct=installation === "rack" ? 100 : clamp(Number(data.widthPct)||defaultWidthForInstallation(installation),20,100);
+    const targetXPct=installation === "rack" ? 50 : clamp(xPct==null ? (Number(data.xPct)||50) : xPct,0,100);
+
     if (installation === "external") {
       pushHistory();
       const d={
         id:uid("dev"),name:data.name||"新設備",type:data.type||"other",installation,height,u:null,side:state.activeFace,
-        placement:"機櫃周邊",brand:"",model:"",serial:"",asset:"",hostname:"",ip:"",mac:"",vlan:"",port:"",
+        widthPct,xPct:targetXPct,placement:"機櫃周邊",brand:"",model:"",serial:"",asset:"",hostname:"",ip:"",mac:"",vlan:"",port:"",
         purchaseDate:"",warrantyDate:"",owner:"",status:"正常",locked:false,note:""
       };
       rack.devices.push(d);selectedDeviceId=d.id;saveState();renderAll();toast(`${d.name} 已加入周邊設備`,"success");return;
     }
-    const targetU = topU ?? findFirstFreeTopU(rack,height,state.activeFace);
-    if (!targetU || !canPlace(rack,targetU,height,state.activeFace)) {
-      toast("沒有足夠的連續 U 空間可放置此設備","error");
+
+    const candidate={installation,widthPct,xPct:targetXPct};
+    const targetU = topU ?? findFirstFreeTopU(rack,height,state.activeFace,candidate);
+    if (!targetU || !canPlace(rack,targetU,height,state.activeFace,null,candidate)) {
+      toast("此位置空間不足，或與其他設備重疊","error");
       return;
     }
     pushHistory();
     const d = {
       id:uid("dev"), name:data.name||"新設備", type:data.type||"other", installation, height,
-      u:targetU, side:state.activeFace, placement:installation === "shelf" ? "層板" : "", brand:"", model:"", serial:"", asset:"",
+      u:targetU, side:state.activeFace, widthPct, xPct:targetXPct,
+      placement:installation === "shelf" ? "層板" : "", brand:"", model:"", serial:"", asset:"",
       hostname:"", ip:"", mac:"", vlan:"", port:"", purchaseDate:"", warrantyDate:"",
       owner:"", status:"正常", locked:false, note:""
     };
@@ -417,31 +472,47 @@
     toast(`${d.name} 已加入 U${targetU}`,"success");
   }
 
-  function moveDevice(deviceId, targetU) {
+  function moveDevice(deviceId, targetU, targetXPct=null) {
     const rack = getActiveRack();
     const d = rack.devices.find(x=>x.id===deviceId);
-    if (!d || d.locked) return;
-    if (!canPlace(rack,targetU,d.height,state.activeFace,d.id)) {
-      toast("此位置空間不足或與其他設備重疊","error");
+    if (!d || d.locked || d.installation === "external") return;
+    const newX=d.installation === "rack" ? 50 : clamp(targetXPct==null ? d.xPct : targetXPct,0,100);
+    const candidate={installation:d.installation,widthPct:d.widthPct,xPct:newX};
+    if (!canPlace(rack,targetU,d.height,state.activeFace,d.id,candidate)) {
+      toast("此位置空間不足，或與其他設備重疊","error");
       return;
     }
-    if (d.u===targetU && d.side===state.activeFace) return;
+    if (d.u===targetU && d.side===state.activeFace && Math.abs((d.xPct||50)-newX)<0.5) return;
     pushHistory();
-    d.u=targetU; d.side=state.activeFace;
+    d.u=targetU; d.side=state.activeFace; d.xPct=newX;
     saveState();renderAll();
   }
 
   function duplicateSelected() {
     const rack = getActiveRack(), d=getSelectedDevice();
     if(!d)return;
-    let topU=null;
+    let topU=null, targetX=d.xPct ?? 50;
     if(d.installation !== "external"){
-      topU=findFirstFreeTopU(rack,d.height,d.side);
+      if(d.installation !== "rack"){
+        const attempts=[0,100,25,75,50];
+        let found=null;
+        for(const x of attempts){
+          if(canPlace(rack,d.u,d.height,d.side,d.id,{installation:d.installation,widthPct:d.widthPct,xPct:x})){
+            if(canPlace(rack,d.u,d.height,d.side,null,{installation:d.installation,widthPct:d.widthPct,xPct:x})){
+              found={u:d.u,x}; break;
+            }
+          }
+        }
+        if(found){topU=found.u;targetX=found.x;}
+      }
+      if(!topU){
+        topU=findFirstFreeTopU(rack,d.height,d.side,{installation:d.installation,widthPct:d.widthPct,xPct:targetX});
+      }
       if(!topU){toast("沒有足夠空間可複製此設備","error");return;}
     }
     pushHistory();
     const copy=deepClone(d);
-    copy.id=uid("dev");copy.name=`${d.name} - 複製`;copy.u=d.installation === "external" ? null : topU;copy.locked=false;
+    copy.id=uid("dev");copy.name=`${d.name} - 複製`;copy.u=d.installation === "external" ? null : topU;copy.xPct=targetX;copy.locked=false;
     rack.devices.push(copy);selectedDeviceId=copy.id;
     saveState();renderAll();toast("設備已複製","success");
   }
@@ -520,6 +591,9 @@
     $("deviceInstallationInput").value=src.installation||"rack";
     $("deviceHeightInput").value=src.height||1;
     $("deviceSideInput").value=src.side||state.activeFace;
+    $("deviceWidthInput").value=src.installation==="rack" ? 100 : (src.widthPct||defaultWidthForInstallation(src.installation));
+    $("deviceXInput").value=src.xPct ?? 50;
+    updateLayoutControlLabels();
     $("devicePlacementInput").value=src.placement||"";
     $("deviceBrandInput").value=src.brand||"";
     $("deviceModelInput").value=src.model||"";
@@ -540,23 +614,53 @@
     $("deviceModal").showModal();
   }
 
+  function horizontalPositionLabel(xPct){
+    const x=Number(xPct)||0;
+    if(x<=12) return "最左";
+    if(x<38) return "偏左";
+    if(x<=62) return "中央";
+    if(x<88) return "偏右";
+    return "最右";
+  }
+
+  function updateLayoutControlLabels(){
+    $("deviceWidthValue").textContent=`${Math.round(Number($("deviceWidthInput").value)||0)}%`;
+    $("deviceXValue").textContent=horizontalPositionLabel($("deviceXInput").value);
+  }
+
   function updateDevicePlacementControls() {
     const installation = $("deviceInstallationInput").value;
     const external = installation === "external";
+    const rackMounted = installation === "rack";
     $("deviceHeightInput").disabled = external;
     $("deviceSideInput").disabled = external;
     $("deviceLockedInput").disabled = external;
+    $("deviceWidthInput").disabled = external || rackMounted;
+    $("deviceXInput").disabled = external || rackMounted;
+    $("deviceWidthControl").classList.toggle("control-disabled", external || rackMounted);
+    $("deviceXControl").classList.toggle("control-disabled", external || rackMounted);
+
+    if(rackMounted){
+      $("deviceWidthInput").value=100;
+      $("deviceXInput").value=50;
+    }else if(!external && Number($("deviceWidthInput").value)>=100){
+      $("deviceWidthInput").value=defaultWidthForInstallation(installation);
+    }
     if (external && !$("devicePlacementInput").value.trim()) $("devicePlacementInput").value = "機櫃周邊";
     if (installation === "shelf" && !$("devicePlacementInput").value.trim()) $("devicePlacementInput").value = "層板";
+    updateLayoutControlLabels();
   }
 
   function getDeviceFormData() {
+    const installation=$("deviceInstallationInput").value;
     return {
       name:sanitizeText($("deviceNameInput").value),
       type:$("deviceTypeInput").value,
-      installation:$("deviceInstallationInput").value,
+      installation,
       height:clamp(parseInt($("deviceHeightInput").value)||1,1,20),
       side:$("deviceSideInput").value || state.activeFace,
+      widthPct:installation==="rack" ? 100 : clamp(Number($("deviceWidthInput").value)||defaultWidthForInstallation(installation),20,100),
+      xPct:installation==="rack" ? 50 : clamp(Number($("deviceXInput").value)||0,0,100),
       placement:sanitizeText($("devicePlacementInput").value),
       brand:sanitizeText($("deviceBrandInput").value),
       model:sanitizeText($("deviceModelInput").value),
@@ -571,7 +675,7 @@
       warrantyDate:$("deviceWarrantyInput").value,
       owner:sanitizeText($("deviceOwnerInput").value),
       status:$("deviceStatusInput").value,
-      locked:$("deviceInstallationInput").value === "external" ? false : $("deviceLockedInput").checked,
+      locked:installation === "external" ? false : $("deviceLockedInput").checked,
       note:sanitizeText($("deviceNoteInput").value)
     };
   }
@@ -588,8 +692,9 @@
       let targetU=null;
       if(data.installation !== "external"){
         targetU = d.installation === "external" ? null : d.u;
-        if(!targetU || data.side!==d.side || data.height!==d.height || d.installation === "external" || !canPlace(rack,targetU,data.height,data.side,d.id)){
-          targetU=findFirstFreeTopU(rack,data.height,data.side);
+        const candidate={installation:data.installation,widthPct:data.widthPct,xPct:data.xPct};
+        if(!targetU || data.side!==d.side || data.height!==d.height || d.installation === "external" || !canPlace(rack,targetU,data.height,data.side,d.id,candidate)){
+          targetU=findFirstFreeTopU(rack,data.height,data.side,candidate);
         }
         if(!targetU){toast("修改後找不到可放置的連續 U 空間","error");return;}
       }
@@ -600,7 +705,7 @@
     }else{
       let topU=null;
       if(data.installation !== "external"){
-        topU=findFirstFreeTopU(rack,data.height,data.side);
+        topU=findFirstFreeTopU(rack,data.height,data.side,{installation:data.installation,widthPct:data.widthPct,xPct:data.xPct});
         if(!topU){toast("沒有足夠的連續 U 空間可新增設備","error");return;}
       }
       pushHistory();
@@ -649,6 +754,8 @@
         "放置位置":d.placement,"安裝面":d.installation==="external"?"—":(d.side==="front"?"FRONT":"REAR"),
         "U位置":d.installation==="external"?"—":(d.height>1?`U${d.u-d.height+1}-U${d.u}`:`U${d.u}`),
         "高度(U)":d.installation==="external"?"—":d.height,
+        "圖面寬度(%)":d.installation==="external"||d.installation==="rack"?"—":Math.round(d.widthPct||0),
+        "水平位置":d.installation==="external"||d.installation==="rack"?"—":horizontalPositionLabel(d.xPct),
         "設備名稱":d.name,"類型":TYPE_LABELS[d.type]||d.type,"廠牌":d.brand,"型號":d.model,
         "序號":d.serial,"資產編號":d.asset,"Hostname":d.hostname,"管理IP":d.ip,"MAC":d.mac,
         "VLAN":d.vlan,"管理Port":d.port,"購買日期":d.purchaseDate,"保固期限":d.warrantyDate,
@@ -709,44 +816,140 @@
   }
   function clearDropState(){rackGrid.classList.remove("drop-ok","drop-bad");}
 
-  document.querySelectorAll(".palette-item").forEach(item=>{
-    item.addEventListener("dragstart",e=>{
-      dragPayload={kind:"palette",type:item.dataset.type,name:item.dataset.name,height:parseInt(item.dataset.height)||1,installation:item.dataset.installation||"rack"};
-      e.dataTransfer.effectAllowed="copy";e.dataTransfer.setData("text/plain",JSON.stringify(dragPayload));
-    });
-    item.addEventListener("dragend",()=>{dragPayload=null;clearDropState();});
-    item.addEventListener("dblclick",()=>addDeviceFromPalette({
-      type:item.dataset.type,name:item.dataset.name,height:parseInt(item.dataset.height)||1,installation:item.dataset.installation||"rack"
-    }));
+  let pointerDrag=null;
+  let suppressClickUntil=0;
+
+  function pointInsideRect(x,y,rect){
+    return x>=rect.left && x<=rect.right && y>=rect.top && y<=rect.bottom;
+  }
+
+  function createDragGhost(payload, sourceEl){
+    const ghost=document.createElement("div");
+    ghost.className="drag-ghost";
+    const sourceLabel=sourceEl?.querySelector("strong")?.textContent || payload.name || "設備";
+    ghost.innerHTML=`<strong>${escapeHtml(sourceLabel)}</strong><span>放開以放置</span>`;
+    document.body.appendChild(ghost);
+    return ghost;
+  }
+
+  function beginPointerDrag(e,target,payload){
+    if(e.button!==0 || e.isPrimary===false) return;
+    const rect=target.getBoundingClientRect();
+    pointerDrag={
+      pointerId:e.pointerId,target,payload,startX:e.clientX,startY:e.clientY,
+      lastX:e.clientX,lastY:e.clientY,moved:false,ghost:null,
+      grabOffsetX: payload.kind==="existing" ? e.clientX-rect.left : null
+    };
+    try{target.setPointerCapture(e.pointerId);}catch{}
+  }
+
+  function updatePointerDropPreview(e){
+    if(!pointerDrag?.moved) return;
+    const p=pointerDrag.payload;
+    const rack=getActiveRack();
+    const gridRect=rackGrid.getBoundingClientRect();
+    const overGrid=pointInsideRect(e.clientX,e.clientY,gridRect);
+    clearDropState();
+
+    if(!overGrid || p.installation==="external"){
+      pointerDrag.dropInfo=null;
+      return;
+    }
+
+    const existing=p.kind==="existing" ? rack.devices.find(d=>d.id===p.deviceId) : null;
+    const installation=existing?.installation || p.installation || "rack";
+    const height=existing?.height || p.height || 1;
+    const widthPct=installation==="rack" ? 100 : (existing?.widthPct || p.widthPct || defaultWidthForInstallation(installation));
+    const offset=installation==="rack" ? null : pointerDrag.grabOffsetX;
+    const xPct=installation==="rack" ? 50 : pointerToXPctFromClientX(e.clientX,widthPct,offset);
+    const topU=pointerToTopUFromClientY(e.clientY,height);
+    const candidate={installation,widthPct,xPct};
+    const ok=canPlace(rack,topU,height,state.activeFace,existing?.id||null,candidate);
+    pointerDrag.dropInfo={topU,xPct,ok};
+    rackGrid.classList.toggle("drop-ok",ok);
+    rackGrid.classList.toggle("drop-bad",!ok);
+  }
+
+  function finishPointerDrag(e){
+    if(!pointerDrag || e.pointerId!==pointerDrag.pointerId) return;
+    const drag=pointerDrag;
+    pointerDrag=null;
+    clearDropState();
+    drag.target.classList.remove("pointer-drag-source");
+    drag.ghost?.remove();
+    try{drag.target.releasePointerCapture(e.pointerId);}catch{}
+
+    if(!drag.moved) return;
+    suppressClickUntil=Date.now()+300;
+    const info=drag.dropInfo;
+    if(!info?.ok) return;
+
+    if(drag.payload.kind==="existing"){
+      moveDevice(drag.payload.deviceId,info.topU,info.xPct);
+    }else{
+      addDeviceFromPalette(drag.payload,info.topU,info.xPct);
+    }
+  }
+
+  document.addEventListener("pointerdown",e=>{
+    const palette=e.target.closest?.(".palette-item");
+    if(palette){
+      beginPointerDrag(e,palette,{
+        kind:"palette",
+        type:palette.dataset.type,
+        name:palette.dataset.name,
+        height:parseInt(palette.dataset.height)||1,
+        installation:palette.dataset.installation||"rack",
+        widthPct:defaultWidthForInstallation(palette.dataset.installation||"rack"),
+        xPct:50
+      });
+      return;
+    }
+    const devEl=e.target.closest?.(".rack-device");
+    if(devEl){
+      const d=getActiveRack()?.devices.find(x=>x.id===devEl.dataset.id);
+      if(!d || d.locked) return;
+      beginPointerDrag(e,devEl,{
+        kind:"existing",deviceId:d.id,installation:d.installation,height:d.height,widthPct:d.widthPct,xPct:d.xPct
+      });
+    }
   });
 
-  rackGrid.addEventListener("dragover",e=>{
-    if(!dragPayload)return;
+  document.addEventListener("pointermove",e=>{
+    if(!pointerDrag || e.pointerId!==pointerDrag.pointerId) return;
+    pointerDrag.lastX=e.clientX;pointerDrag.lastY=e.clientY;
+    const dist=Math.hypot(e.clientX-pointerDrag.startX,e.clientY-pointerDrag.startY);
+    if(!pointerDrag.moved && dist<5) return;
+    if(!pointerDrag.moved){
+      pointerDrag.moved=true;
+      pointerDrag.target.classList.add("pointer-drag-source");
+      pointerDrag.ghost=createDragGhost(pointerDrag.payload,pointerDrag.target);
+      suppressClickUntil=Date.now()+300;
+    }
     e.preventDefault();
-    const rack=getActiveRack();
-    const draggedDevice=dragPayload.kind==="existing" ? rack.devices.find(d=>d.id===dragPayload.deviceId) : null;
-    if(draggedDevice?.installation === "external") return;
-    const height=dragPayload.kind==="existing" ? (draggedDevice?.height||1) : dragPayload.height;
-    const targetU=pointerToTopU(e,height);
-    const ok=canPlace(rack,targetU,height,state.activeFace,dragPayload.kind==="existing"?dragPayload.deviceId:null);
-    rackGrid.classList.toggle("drop-ok",ok);rackGrid.classList.toggle("drop-bad",!ok);
-    e.dataTransfer.dropEffect=dragPayload.kind==="existing"?"move":"copy";
-  });
+    if(pointerDrag.ghost){
+      pointerDrag.ghost.style.transform=`translate3d(${e.clientX+14}px,${e.clientY+14}px,0)`;
+    }
+    updatePointerDropPreview(e);
+  },{passive:false});
 
-  rackGrid.addEventListener("dragleave",e=>{
-    if(!rackGrid.contains(e.relatedTarget))clearDropState();
-  });
+  document.addEventListener("pointerup",finishPointerDrag);
+  document.addEventListener("pointercancel",finishPointerDrag);
 
-  rackGrid.addEventListener("drop",e=>{
-    e.preventDefault();clearDropState();if(!dragPayload)return;
-    const rack=getActiveRack();
-    const draggedDevice=dragPayload.kind==="existing" ? rack.devices.find(d=>d.id===dragPayload.deviceId) : null;
-    if(draggedDevice?.installation === "external") return;
-    const height=dragPayload.kind==="existing" ? (draggedDevice?.height||1) : dragPayload.height;
-    const targetU=pointerToTopU(e,height);
-    if(dragPayload.kind==="existing")moveDevice(dragPayload.deviceId,targetU);
-    else addDeviceFromPalette(dragPayload,targetU);
-    dragPayload=null;
+  document.addEventListener("dragstart",e=>{
+    if(e.target.closest?.(".palette-item,.rack-device")){
+      e.preventDefault();
+      return false;
+    }
+  },true);
+
+  document.querySelectorAll(".palette-item").forEach(item=>{
+    item.draggable=false;
+    item.addEventListener("dblclick",()=>addDeviceFromPalette({
+      type:item.dataset.type,name:item.dataset.name,height:parseInt(item.dataset.height)||1,
+      installation:item.dataset.installation||"rack",
+      widthPct:defaultWidthForInstallation(item.dataset.installation||"rack"),xPct:50
+    }));
   });
 
   $("rackSelect").addEventListener("change",e=>{
@@ -770,6 +973,8 @@
   $("btnDuplicateDevice").onclick=duplicateSelected;
   $("deviceForm").addEventListener("submit",saveDeviceFromModal);
   $("deviceInstallationInput").addEventListener("change",updateDevicePlacementControls);
+  $("deviceWidthInput").addEventListener("input",updateLayoutControlLabels);
+  $("deviceXInput").addEventListener("input",updateLayoutControlLabels);
 
   $("btnExportMenu").onclick=e=>{
     e.stopPropagation();$("exportMenu").classList.toggle("open");
