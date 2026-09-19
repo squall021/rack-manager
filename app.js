@@ -2,12 +2,16 @@
   "use strict";
 
   const STORAGE_KEY = "rack-manager-v1-state";
-  const ROW_HEIGHT = 32;
+  const BASE_ROW_HEIGHT = 32;
   const MAX_HISTORY = 50;
 
   const TYPE_LABELS = {
     switch:"網路交換器", router:"路由器 / 防火牆", patch:"Patch Panel", cable:"理線架",
     server:"伺服器", nas:"NAS", ups:"UPS", pdu:"PDU", shelf:"層板 / 其他", other:"其他"
+  };
+
+  const INSTALLATION_LABELS = {
+    rack:"機架式", shelf:"層板式", tower:"桌上型 / 塔式", external:"外部設備"
   };
 
   const state = loadState();
@@ -31,9 +35,10 @@
   function makeDefaultState() {
     const rackId = uid("rack");
     return {
-      version: 1,
+      version: 1.1,
       activeRackId: rackId,
       activeFace: "front",
+      zoom: 1,
       racks: [{
         id:rackId, name:"Rack-01", units:42, location:"", note:"",
         devices:[], createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()
@@ -43,8 +48,10 @@
 
   function normalizeState(raw) {
     if (!raw || !Array.isArray(raw.racks) || !raw.racks.length) return makeDefaultState();
-    raw.version = 1;
+    raw.version = 1.1;
     raw.activeFace = raw.activeFace === "rear" ? "rear" : "front";
+    const zoom = Number(raw.zoom);
+    raw.zoom = [1,0.9,0.8,0.7].includes(zoom) ? zoom : 1;
     raw.racks.forEach((r, i) => {
       r.id ||= uid("rack");
       r.name ||= `Rack-${String(i+1).padStart(2,"0")}`;
@@ -56,9 +63,11 @@
         d.id ||= uid("dev");
         d.name ||= "未命名設備";
         d.type ||= "other";
+        d.installation = ["rack","shelf","tower","external"].includes(d.installation) ? d.installation : "rack";
         d.height = clamp(parseInt(d.height)||1,1,20);
-        d.u = clamp(parseInt(d.u)||1,1,r.units);
+        d.u = d.installation === "external" ? null : clamp(parseInt(d.u)||1,1,r.units);
         d.side = d.side === "rear" ? "rear" : "front";
+        d.placement ||= "";
         d.locked = !!d.locked;
         d.status ||= "正常";
       });
@@ -119,6 +128,7 @@
   }
 
   function clamp(n,min,max){ return Math.max(min, Math.min(max,n)); }
+  function rowHeight(){ return BASE_ROW_HEIGHT * (Number(state.zoom) || 1); }
   function getActiveRack(){ return state.racks.find(r => r.id === state.activeRackId) || state.racks[0]; }
   function getSelectedDevice(){
     const rack = getActiveRack();
@@ -132,6 +142,7 @@
     renderRack();
     renderInspector();
     renderDeviceList();
+    renderPeripheralDevices();
     updateUndoButtons();
   }
 
@@ -157,7 +168,9 @@
     const rack = getActiveRack();
     if (!rack) return;
 
-    document.documentElement.style.setProperty("--u-height", `${ROW_HEIGHT}px`);
+    const rh = rowHeight();
+    document.documentElement.style.setProperty("--u-height", `${rh}px`);
+    $("rackZoom").value = String(state.zoom || 1);
     $("rackTitle").textContent = rack.name;
     $("rackSubtitle").textContent = `${rack.units}U 機櫃${rack.location ? " · "+rack.location : ""}`;
     $("exportRackName").textContent = rack.name;
@@ -170,8 +183,8 @@
     });
 
     rackGrid.innerHTML = "";
-    rackGrid.style.height = `${rack.units * ROW_HEIGHT}px`;
-    rackGrid.style.minHeight = `${rack.units * ROW_HEIGHT}px`;
+    rackGrid.style.height = `${rack.units * rh}px`;
+    rackGrid.style.minHeight = `${rack.units * rh}px`;
 
     for (let u=rack.units; u>=1; u--) {
       const row = document.createElement("div");
@@ -182,24 +195,26 @@
     }
 
     const devices = rack.devices
-      .filter(d => d.side === state.activeFace)
-      .sort((a,b)=>b.u-a.u);
+      .filter(d => d.installation !== "external" && d.side === state.activeFace)
+      .sort((a,b)=>(b.u||0)-(a.u||0));
 
     devices.forEach(d => {
       const el = document.createElement("div");
-      const top = (rack.units - d.u) * ROW_HEIGHT + 1;
-      const height = d.height * ROW_HEIGHT - 2;
-      el.className = `rack-device dev-${d.type}${d.id===selectedDeviceId?" selected":""}${d.locked?" locked":""}`;
+      const top = (rack.units - d.u) * rh + 1;
+      const height = d.height * rh - 2;
+      const mountClass = d.installation === "shelf" ? " mount-shelf" : d.installation === "tower" ? " mount-tower" : "";
+      const smallClass = Number(state.zoom) <= 0.8 ? " zoom-small" : "";
+      el.className = `rack-device dev-${d.type}${mountClass}${smallClass}${d.id===selectedDeviceId?" selected":""}${d.locked?" locked":""}`;
       el.style.top = `${top}px`;
       el.style.height = `${height}px`;
       el.draggable = !d.locked;
       el.dataset.id = d.id;
       const uBottom = d.u - d.height + 1;
-      el.title = `${d.name}｜U${uBottom}${d.height>1?`–U${d.u}`:""}`;
+      el.title = `${d.name}｜${INSTALLATION_LABELS[d.installation]}｜U${uBottom}${d.height>1?`–U${d.u}`:""}`;
       el.innerHTML = `
         <div class="device-main">
           <strong>${d.locked?'<span class="lock-mark">🔒</span>':""}${escapeHtml(d.name)}</strong>
-          <span>${escapeHtml([d.model,d.ip].filter(Boolean).join(" · ") || TYPE_LABELS[d.type] || "設備")}</span>
+          <span>${escapeHtml([INSTALLATION_LABELS[d.installation],d.model,d.ip].filter(Boolean).join(" · ") || TYPE_LABELS[d.type] || "設備")}</span>
         </div>
         <span class="device-u">${d.height}U</span>
       `;
@@ -209,8 +224,12 @@
         renderRack();
         renderInspector();
         renderDeviceList();
+        renderPeripheralDevices();
       });
-      el.addEventListener("dblclick", () => openDeviceModal(d.id));
+      el.addEventListener("dblclick", e => {
+        e.stopPropagation();
+        openDeviceModal(d.id);
+      });
       el.addEventListener("dragstart", e => {
         if (d.locked) { e.preventDefault(); return; }
         dragPayload = {kind:"existing", deviceId:d.id};
@@ -231,6 +250,7 @@
       renderRack();
       renderInspector();
       renderDeviceList();
+      renderPeripheralDevices();
     };
 
     updateStats();
@@ -238,7 +258,7 @@
 
   function updateStats() {
     const rack = getActiveRack();
-    const faceDevices = rack.devices.filter(d => d.side === state.activeFace);
+    const faceDevices = rack.devices.filter(d => d.installation !== "external" && d.side === state.activeFace);
     const usedUnits = new Set();
     faceDevices.forEach(d => {
       for (let u=d.u; u>=d.u-d.height+1; u--) if (u>=1) usedUnits.add(u);
@@ -259,13 +279,16 @@
     $("selectedBadge").textContent = d ? "已選取" : "未選取";
     if (!d) return;
 
-    const bottom = d.u-d.height+1;
+    const isExternal = d.installation === "external";
+    const bottom = isExternal ? null : d.u-d.height+1;
     $("inspectType").textContent = TYPE_LABELS[d.type] || "其他";
     $("inspectName").textContent = d.name;
-    $("inspectU").textContent = d.height>1 ? `U${bottom}–U${d.u}` : `U${d.u}`;
+    $("inspectU").textContent = isExternal ? "周邊" : (d.height>1 ? `U${bottom}–U${d.u}` : `U${d.u}`);
     const details = [
-      ["安裝面", d.side==="front"?"FRONT 正面":"REAR 背面"],
-      ["高度", `${d.height}U`],
+      ["安裝形式", INSTALLATION_LABELS[d.installation] || "機架式"],
+      ["放置位置", d.placement],
+      ["安裝面", isExternal ? "—" : (d.side==="front"?"FRONT 正面":"REAR 背面")],
+      ["高度", isExternal ? "—" : `${d.height}U`],
       ["廠牌", d.brand],
       ["型號", d.model],
       ["序號", d.serial],
@@ -279,33 +302,61 @@
       ["保固期限", d.warrantyDate],
       ["負責單位", d.owner],
       ["狀態", d.status],
-      ["位置鎖定", d.locked ? "是" : "否"],
+      ["位置鎖定", isExternal ? "—" : (d.locked ? "是" : "否")],
       ["備註", d.note]
-    ].filter(([,v]) => v);
+    ].filter(([,v]) => v !== "" && v !== null && v !== undefined);
     $("inspectDetails").innerHTML = details.map(([k,v])=>`<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join("");
   }
 
   function renderDeviceList() {
     const rack = getActiveRack();
     const list = $("deviceList");
-    const devices = rack.devices.filter(d=>d.side===state.activeFace).sort((a,b)=>b.u-a.u);
+    const devices = rack.devices
+      .filter(d=>d.installation === "external" || d.side===state.activeFace)
+      .sort((a,b)=>{
+        if (a.installation === "external" && b.installation !== "external") return 1;
+        if (a.installation !== "external" && b.installation === "external") return -1;
+        return (b.u||0)-(a.u||0);
+      });
     if (!devices.length) {
-      list.innerHTML = `<div class="empty-state" style="padding:18px 8px"><p>本面尚無設備</p></div>`;
+      list.innerHTML = `<div class="empty-state" style="padding:18px 8px"><p>尚無設備</p></div>`;
       return;
     }
     list.innerHTML = "";
     devices.forEach(d=>{
       const item = document.createElement("div");
       item.className = "device-list-item";
+      const location = d.installation === "external" ? (d.placement || "周邊") : `U${d.u}`;
       item.innerHTML = `
-        <div><strong>${escapeHtml(d.name)}</strong><span>${escapeHtml(TYPE_LABELS[d.type]||"其他")} · ${d.height}U${d.ip?` · ${escapeHtml(d.ip)}`:""}</span></div>
-        <div class="list-u">U${d.u}</div>`;
+        <div><strong>${escapeHtml(d.name)}</strong><span>${escapeHtml(TYPE_LABELS[d.type]||"其他")} · ${escapeHtml(INSTALLATION_LABELS[d.installation]||"機架式")}${d.ip?` · ${escapeHtml(d.ip)}`:""}</span></div>
+        <div class="list-u">${escapeHtml(location)}</div>`;
       item.addEventListener("click",()=>{
         selectedDeviceId=d.id;
-        renderRack();renderInspector();renderDeviceList();
+        renderRack();renderInspector();renderDeviceList();renderPeripheralDevices();
       });
       item.addEventListener("dblclick",()=>openDeviceModal(d.id));
       list.appendChild(item);
+    });
+  }
+
+  function renderPeripheralDevices() {
+    const rack = getActiveRack();
+    const section = $("peripheralSection");
+    const list = $("peripheralList");
+    const devices = rack.devices.filter(d=>d.installation === "external");
+    section.classList.toggle("hidden", devices.length === 0);
+    $("peripheralCount").textContent = `${devices.length} 台`;
+    list.innerHTML = "";
+    devices.forEach(d=>{
+      const card=document.createElement("div");
+      card.className=`peripheral-card${d.id===selectedDeviceId?" selected":""}`;
+      card.innerHTML=`
+        <div class="peripheral-icon">${escapeHtml((TYPE_LABELS[d.type]||"設備").slice(0,2))}</div>
+        <div style="min-width:0;flex:1"><strong>${escapeHtml(d.name)}</strong><span>${escapeHtml([d.placement,d.model,d.ip].filter(Boolean).join(" · ") || "機櫃周邊")}</span></div>
+      `;
+      card.addEventListener("click",()=>{selectedDeviceId=d.id;renderInspector();renderDeviceList();renderPeripheralDevices();renderRack();});
+      card.addEventListener("dblclick",()=>openDeviceModal(d.id));
+      list.appendChild(card);
     });
   }
 
@@ -313,7 +364,7 @@
     const bottomU = topU-height+1;
     if (topU>rack.units || bottomU<1) return false;
     return !rack.devices.some(d => {
-      if (d.id===ignoreId || d.side!==side) return false;
+      if (d.id===ignoreId || d.installation === "external" || d.side!==side) return false;
       const dBottom = d.u-d.height+1;
       return !(topU < dBottom || bottomU > d.u);
     });
@@ -323,7 +374,7 @@
     const rack = getActiveRack();
     const rect = rackGrid.getBoundingClientRect();
     const y = clamp(e.clientY - rect.top, 0, rect.height-1);
-    let topU = rack.units - Math.floor(y / ROW_HEIGHT);
+    let topU = rack.units - Math.floor(y / rowHeight());
     topU = clamp(topU, height, rack.units);
     return topU;
   }
@@ -338,6 +389,16 @@
   function addDeviceFromPalette(data, topU=null) {
     const rack = getActiveRack();
     const height = clamp(parseInt(data.height)||1,1,20);
+    const installation = ["rack","shelf","tower","external"].includes(data.installation) ? data.installation : "rack";
+    if (installation === "external") {
+      pushHistory();
+      const d={
+        id:uid("dev"),name:data.name||"新設備",type:data.type||"other",installation,height,u:null,side:state.activeFace,
+        placement:"機櫃周邊",brand:"",model:"",serial:"",asset:"",hostname:"",ip:"",mac:"",vlan:"",port:"",
+        purchaseDate:"",warrantyDate:"",owner:"",status:"正常",locked:false,note:""
+      };
+      rack.devices.push(d);selectedDeviceId=d.id;saveState();renderAll();toast(`${d.name} 已加入周邊設備`,"success");return;
+    }
     const targetU = topU ?? findFirstFreeTopU(rack,height,state.activeFace);
     if (!targetU || !canPlace(rack,targetU,height,state.activeFace)) {
       toast("沒有足夠的連續 U 空間可放置此設備","error");
@@ -345,8 +406,8 @@
     }
     pushHistory();
     const d = {
-      id:uid("dev"), name:data.name||"新設備", type:data.type||"other", height,
-      u:targetU, side:state.activeFace, brand:"", model:"", serial:"", asset:"",
+      id:uid("dev"), name:data.name||"新設備", type:data.type||"other", installation, height,
+      u:targetU, side:state.activeFace, placement:installation === "shelf" ? "層板" : "", brand:"", model:"", serial:"", asset:"",
       hostname:"", ip:"", mac:"", vlan:"", port:"", purchaseDate:"", warrantyDate:"",
       owner:"", status:"正常", locked:false, note:""
     };
@@ -373,11 +434,14 @@
   function duplicateSelected() {
     const rack = getActiveRack(), d=getSelectedDevice();
     if(!d)return;
-    const topU=findFirstFreeTopU(rack,d.height,d.side);
-    if(!topU){toast("沒有足夠空間可複製此設備","error");return;}
+    let topU=null;
+    if(d.installation !== "external"){
+      topU=findFirstFreeTopU(rack,d.height,d.side);
+      if(!topU){toast("沒有足夠空間可複製此設備","error");return;}
+    }
     pushHistory();
     const copy=deepClone(d);
-    copy.id=uid("dev");copy.name=`${d.name} - 複製`;copy.u=topU;copy.locked=false;
+    copy.id=uid("dev");copy.name=`${d.name} - 複製`;copy.u=d.installation === "external" ? null : topU;copy.locked=false;
     rack.devices.push(copy);selectedDeviceId=copy.id;
     saveState();renderAll();toast("設備已複製","success");
   }
@@ -415,7 +479,7 @@
 
     if(rackModalMode==="edit"){
       const rack=getActiveRack();
-      const invalid=rack.devices.some(d=>d.u>units || d.u-d.height+1<1);
+      const invalid=rack.devices.some(d=>d.installation !== "external" && (d.u>units || d.u-d.height+1<1));
       if(invalid){toast("縮小 U 數後會有設備超出範圍，請先移動或刪除設備","error");return;}
       pushHistory();
       rack.name=name;rack.units=units;rack.location=location;rack.note=note;
@@ -447,14 +511,16 @@
     $("deviceModalTitle").textContent=d?"編輯設備":"新增自訂設備";
 
     const src=d||{
-      name:preset?.name||"自訂設備",type:preset?.type||"other",height:preset?.height||1,side:state.activeFace,
-      brand:"",model:"",serial:"",asset:"",hostname:"",ip:"",mac:"",vlan:"",port:"",
+      name:preset?.name||"自訂設備",type:preset?.type||"other",installation:preset?.installation||"rack",height:preset?.height||1,side:state.activeFace,
+      placement:preset?.installation==="shelf"?"層板":"",brand:"",model:"",serial:"",asset:"",hostname:"",ip:"",mac:"",vlan:"",port:"",
       purchaseDate:"",warrantyDate:"",owner:"",status:"正常",locked:false,note:""
     };
     $("deviceNameInput").value=src.name||"";
     $("deviceTypeInput").value=src.type||"other";
+    $("deviceInstallationInput").value=src.installation||"rack";
     $("deviceHeightInput").value=src.height||1;
     $("deviceSideInput").value=src.side||state.activeFace;
+    $("devicePlacementInput").value=src.placement||"";
     $("deviceBrandInput").value=src.brand||"";
     $("deviceModelInput").value=src.model||"";
     $("deviceSerialInput").value=src.serial||"";
@@ -470,15 +536,28 @@
     $("deviceStatusInput").value=src.status||"正常";
     $("deviceLockedInput").checked=!!src.locked;
     $("deviceNoteInput").value=src.note||"";
+    updateDevicePlacementControls();
     $("deviceModal").showModal();
+  }
+
+  function updateDevicePlacementControls() {
+    const installation = $("deviceInstallationInput").value;
+    const external = installation === "external";
+    $("deviceHeightInput").disabled = external;
+    $("deviceSideInput").disabled = external;
+    $("deviceLockedInput").disabled = external;
+    if (external && !$("devicePlacementInput").value.trim()) $("devicePlacementInput").value = "機櫃周邊";
+    if (installation === "shelf" && !$("devicePlacementInput").value.trim()) $("devicePlacementInput").value = "層板";
   }
 
   function getDeviceFormData() {
     return {
       name:sanitizeText($("deviceNameInput").value),
       type:$("deviceTypeInput").value,
+      installation:$("deviceInstallationInput").value,
       height:clamp(parseInt($("deviceHeightInput").value)||1,1,20),
-      side:$("deviceSideInput").value,
+      side:$("deviceSideInput").value || state.activeFace,
+      placement:sanitizeText($("devicePlacementInput").value),
       brand:sanitizeText($("deviceBrandInput").value),
       model:sanitizeText($("deviceModelInput").value),
       serial:sanitizeText($("deviceSerialInput").value),
@@ -492,7 +571,7 @@
       warrantyDate:$("deviceWarrantyInput").value,
       owner:sanitizeText($("deviceOwnerInput").value),
       status:$("deviceStatusInput").value,
-      locked:$("deviceLockedInput").checked,
+      locked:$("deviceInstallationInput").value === "external" ? false : $("deviceLockedInput").checked,
       note:sanitizeText($("deviceNoteInput").value)
     };
   }
@@ -506,21 +585,28 @@
     if(deviceModalMode==="edit"){
       const d=rack.devices.find(x=>x.id===editingDeviceId);
       if(!d)return;
-      let targetU=d.u;
-      if(data.side!==d.side || data.height!==d.height || !canPlace(rack,targetU,data.height,data.side,d.id)){
-        targetU=findFirstFreeTopU(rack,data.height,data.side);
+      let targetU=null;
+      if(data.installation !== "external"){
+        targetU = d.installation === "external" ? null : d.u;
+        if(!targetU || data.side!==d.side || data.height!==d.height || d.installation === "external" || !canPlace(rack,targetU,data.height,data.side,d.id)){
+          targetU=findFirstFreeTopU(rack,data.height,data.side);
+        }
+        if(!targetU){toast("修改後找不到可放置的連續 U 空間","error");return;}
       }
-      if(!targetU){toast("修改後找不到可放置的連續 U 空間","error");return;}
       pushHistory();
-      Object.assign(d,data,{u:targetU});
+      Object.assign(d,data,{u:data.installation === "external" ? null : targetU});
       selectedDeviceId=d.id;
-      state.activeFace=d.side;
+      if(data.installation !== "external") state.activeFace=d.side;
     }else{
-      const topU=findFirstFreeTopU(rack,data.height,data.side);
-      if(!topU){toast("沒有足夠的連續 U 空間可新增設備","error");return;}
+      let topU=null;
+      if(data.installation !== "external"){
+        topU=findFirstFreeTopU(rack,data.height,data.side);
+        if(!topU){toast("沒有足夠的連續 U 空間可新增設備","error");return;}
+      }
       pushHistory();
-      const d={id:uid("dev"),...data,u:topU};
-      rack.devices.push(d);selectedDeviceId=d.id;state.activeFace=d.side;
+      const d={id:uid("dev"),...data,u:data.installation === "external" ? null : topU};
+      rack.devices.push(d);selectedDeviceId=d.id;
+      if(data.installation !== "external") state.activeFace=d.side;
     }
     saveState();$("deviceModal").close();renderAll();toast("設備資料已儲存","success");
   }
@@ -557,16 +643,19 @@
     if(typeof XLSX==="undefined"){toast("Excel 元件載入失敗，請確認網路連線","error");return;}
     const wb=XLSX.utils.book_new();
     state.racks.forEach(r=>{
-      const rows=r.devices.sort((a,b)=>b.u-a.u).map(d=>({
-        "機櫃":r.name,"機櫃位置":r.location,"安裝面":d.side==="front"?"FRONT":"REAR",
-        "U位置":d.height>1?`U${d.u-d.height+1}-U${d.u}`:`U${d.u}`,"高度(U)":d.height,
+      const sorted=[...r.devices].sort((a,b)=>(b.u||0)-(a.u||0));
+      const rows=sorted.map(d=>({
+        "機櫃":r.name,"機櫃位置":r.location,"安裝形式":INSTALLATION_LABELS[d.installation]||"機架式",
+        "放置位置":d.placement,"安裝面":d.installation==="external"?"—":(d.side==="front"?"FRONT":"REAR"),
+        "U位置":d.installation==="external"?"—":(d.height>1?`U${d.u-d.height+1}-U${d.u}`:`U${d.u}`),
+        "高度(U)":d.installation==="external"?"—":d.height,
         "設備名稱":d.name,"類型":TYPE_LABELS[d.type]||d.type,"廠牌":d.brand,"型號":d.model,
         "序號":d.serial,"資產編號":d.asset,"Hostname":d.hostname,"管理IP":d.ip,"MAC":d.mac,
         "VLAN":d.vlan,"管理Port":d.port,"購買日期":d.purchaseDate,"保固期限":d.warrantyDate,
-        "負責單位":d.owner,"狀態":d.status,"鎖定位置":d.locked?"是":"否","備註":d.note
+        "負責單位":d.owner,"狀態":d.status,"鎖定位置":d.installation==="external"?"—":(d.locked?"是":"否"),"備註":d.note
       }));
       const ws=XLSX.utils.json_to_sheet(rows.length?rows:[{"機櫃":r.name,"機櫃位置":r.location,"設備名稱":"（尚無設備）"}]);
-      ws["!cols"]=[12,16,10,13,10,22,16,14,18,18,14,16,16,18,10,14,14,14,16,10,10,30].map(w=>({wch:w}));
+      ws["!cols"]=[12,16,16,18,10,13,10,22,16,14,18,18,14,16,16,18,10,14,14,14,16,10,10,30].map(w=>({wch:w}));
       const sheetName=safeSheetName(r.name);
       XLSX.utils.book_append_sheet(wb,ws,sheetName);
     });
@@ -620,15 +709,14 @@
   }
   function clearDropState(){rackGrid.classList.remove("drop-ok","drop-bad");}
 
-  // Drag from palette
   document.querySelectorAll(".palette-item").forEach(item=>{
     item.addEventListener("dragstart",e=>{
-      dragPayload={kind:"palette",type:item.dataset.type,name:item.dataset.name,height:parseInt(item.dataset.height)||1};
+      dragPayload={kind:"palette",type:item.dataset.type,name:item.dataset.name,height:parseInt(item.dataset.height)||1,installation:item.dataset.installation||"rack"};
       e.dataTransfer.effectAllowed="copy";e.dataTransfer.setData("text/plain",JSON.stringify(dragPayload));
     });
     item.addEventListener("dragend",()=>{dragPayload=null;clearDropState();});
     item.addEventListener("dblclick",()=>addDeviceFromPalette({
-      type:item.dataset.type,name:item.dataset.name,height:parseInt(item.dataset.height)||1
+      type:item.dataset.type,name:item.dataset.name,height:parseInt(item.dataset.height)||1,installation:item.dataset.installation||"rack"
     }));
   });
 
@@ -636,9 +724,9 @@
     if(!dragPayload)return;
     e.preventDefault();
     const rack=getActiveRack();
-    const height=dragPayload.kind==="existing"
-      ? (rack.devices.find(d=>d.id===dragPayload.deviceId)?.height||1)
-      : dragPayload.height;
+    const draggedDevice=dragPayload.kind==="existing" ? rack.devices.find(d=>d.id===dragPayload.deviceId) : null;
+    if(draggedDevice?.installation === "external") return;
+    const height=dragPayload.kind==="existing" ? (draggedDevice?.height||1) : dragPayload.height;
     const targetU=pointerToTopU(e,height);
     const ok=canPlace(rack,targetU,height,state.activeFace,dragPayload.kind==="existing"?dragPayload.deviceId:null);
     rackGrid.classList.toggle("drop-ok",ok);rackGrid.classList.toggle("drop-bad",!ok);
@@ -652,18 +740,20 @@
   rackGrid.addEventListener("drop",e=>{
     e.preventDefault();clearDropState();if(!dragPayload)return;
     const rack=getActiveRack();
-    const height=dragPayload.kind==="existing"
-      ? (rack.devices.find(d=>d.id===dragPayload.deviceId)?.height||1)
-      : dragPayload.height;
+    const draggedDevice=dragPayload.kind==="existing" ? rack.devices.find(d=>d.id===dragPayload.deviceId) : null;
+    if(draggedDevice?.installation === "external") return;
+    const height=dragPayload.kind==="existing" ? (draggedDevice?.height||1) : dragPayload.height;
     const targetU=pointerToTopU(e,height);
     if(dragPayload.kind==="existing")moveDevice(dragPayload.deviceId,targetU);
     else addDeviceFromPalette(dragPayload,targetU);
     dragPayload=null;
   });
 
-  // Main controls
   $("rackSelect").addEventListener("change",e=>{
     state.activeRackId=e.target.value;selectedDeviceId=null;saveState();renderAll();
+  });
+  $("rackZoom").addEventListener("change",e=>{
+    state.zoom=Number(e.target.value)||1;saveState();renderAll();
   });
   document.querySelectorAll(".face-toggle button").forEach(btn=>btn.addEventListener("click",()=>{
     state.activeFace=btn.dataset.face;selectedDeviceId=null;saveState();renderAll();
@@ -679,6 +769,7 @@
   $("btnDeleteDevice").onclick=deleteSelected;
   $("btnDuplicateDevice").onclick=duplicateSelected;
   $("deviceForm").addEventListener("submit",saveDeviceFromModal);
+  $("deviceInstallationInput").addEventListener("change",updateDevicePlacementControls);
 
   $("btnExportMenu").onclick=e=>{
     e.stopPropagation();$("exportMenu").classList.toggle("open");
