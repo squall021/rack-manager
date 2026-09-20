@@ -121,3 +121,12 @@
     setTimeout(patchOverviewFilters, 0);
   });
 })();
+
+// V2.5.1 UI integration layer. Load after all page scripts so V2.4/V2.5 controls exist.
+window.addEventListener("load", () => {
+  if (document.querySelector('script[data-v251-loader]')) return;
+  const script = document.createElement("script");
+  script.src = "v251.js?v=2.5.1";
+  script.dataset.v251Loader = "1";
+  document.body.appendChild(script);
+}, { once:true });
