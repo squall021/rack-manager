@@ -132,20 +132,26 @@ window.addEventListener("load", () => {
   }
   if (!document.querySelector('script[data-v261-loader]')) {
     const fix = document.createElement("script");
-    fix.src = "v261.js?v=2.6.5";
+    fix.src = "v261.js?v=2.6.6";
     fix.dataset.v261Loader = "1";
     document.body.appendChild(fix);
   }
   if (!document.querySelector('script[data-v264-loader]')) {
     const moveFix = document.createElement("script");
-    moveFix.src = "v264.js?v=2.6.5";
+    moveFix.src = "v264.js?v=2.6.6";
     moveFix.dataset.v264Loader = "1";
     document.body.appendChild(moveFix);
   }
   if (!document.querySelector('script[data-v265-loader]')) {
     const emptyFix = document.createElement("script");
-    emptyFix.src = "v265.js?v=2.6.5";
+    emptyFix.src = "v265.js?v=2.6.6";
     emptyFix.dataset.v265Loader = "1";
     document.body.appendChild(emptyFix);
+  }
+  if (!document.querySelector('script[data-v266-loader]')) {
+    const rackFix = document.createElement("script");
+    rackFix.src = "v266.js?v=2.6.6";
+    rackFix.dataset.v266Loader = "1";
+    document.body.appendChild(rackFix);
   }
 }, { once:true });
