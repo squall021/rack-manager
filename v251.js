@@ -1,196 +1,68 @@
 (() => {
   "use strict";
-  if (window.__rackManagerV251Loaded) return;
-  window.__rackManagerV251Loaded = true;
+  if (window.__rackManagerV26Loaded) return;
+  window.__rackManagerV26Loaded = true;
 
   const STORAGE_KEY = "rack-manager-v1-state";
   const DEFAULT_SITE = "未分類據點";
   const DEFAULT_ROOM = "未分類機房";
-  const TYPE_LABELS = {
-    switch:"網路交換器", router:"路由器 / 防火牆", patch:"Patch Panel", cable:"理線架",
-    server:"伺服器", nas:"NAS", ups:"UPS", pdu:"PDU", shelf:"層板 / 其他", other:"其他"
-  };
   const $ = id => document.getElementById(id);
   const norm = v => String(v ?? "").trim();
   const esc = s => String(s ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
-  const siteOf = rack => norm(rack?.siteName) || DEFAULT_SITE;
-  const roomOf = rack => norm(rack?.roomName) || norm(rack?.location) || DEFAULT_ROOM;
+  const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
+  const uid=p=>`${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+  const TYPE_LABELS={switch:"網路交換器",router:"路由器 / 防火牆",patch:"Patch Panel",cable:"理線架",server:"伺服器",nas:"NAS",ups:"UPS",pdu:"PDU",shelf:"層板 / 其他",other:"其他"};
+  const INSTALL_LABELS={rack:"機架式",shelf:"層板式",tower:"桌上型 / 塔式",external:"外部設備"};
 
   const style=document.createElement("style");
   style.textContent=`
-    #v24OverviewBtn{display:none!important}
-    #v25DispatchBtn{white-space:nowrap}
-    #v25Dispatch.v251-ready{overflow:visible}
-    #v25Dispatch.v251-ready .v25-summary{grid-template-columns:repeat(6,minmax(0,1fr))}
-    #v25Dispatch.v251-ready .v25-toolbar{grid-template-columns:minmax(220px,2fr) repeat(4,minmax(115px,1fr)) auto}
-    #v25Dispatch.v251-ready #v25Kind{display:none}
-    .v251-tabs{display:flex;align-items:center;gap:6px;margin:0 0 10px;flex-wrap:wrap}
-    .v251-tab{border:1px solid #dbe3ed;background:#fff;color:#526176;border-radius:999px;padding:6px 11px;font-size:10px;font-weight:800;cursor:pointer}
-    .v251-tab.active{background:#0f172a;border-color:#0f172a;color:#fff}
-    .v251-tab span{opacity:.72;margin-left:4px}
-    .v251-menu-trigger{width:30px;height:28px;border:1px solid #dbe3ed;background:#fff;border-radius:7px;color:#475569;font-weight:900;cursor:pointer;font-size:15px;line-height:1;position:relative;z-index:2}
-    .v251-menu-trigger:hover{border-color:#93c5fd;color:#2563eb}
-    .v251-action-popup{position:fixed;z-index:2147483646;min-width:150px;background:#fff;border:1px solid #dbe3ed;border-radius:10px;box-shadow:0 16px 44px rgba(15,23,42,.28);padding:5px;display:grid;gap:2px}
-    .v251-action-popup button{border:0;background:transparent;border-radius:7px;padding:8px 9px;text-align:left;font-size:10px;color:#334155;cursor:pointer;white-space:nowrap}
-    .v251-action-popup button:hover{background:#f1f5f9}.v251-action-popup button.danger{color:#b91c1c}
-    .v251-zero-note{color:#94a3b8}
-    @media(max-width:1050px){#v25Dispatch.v251-ready .v25-summary{grid-template-columns:repeat(3,1fr)}#v25Dispatch.v251-ready .v25-toolbar{grid-template-columns:1fr 1fr 1fr}.v25-toolbar #v25Search{grid-column:1/-1}.v25-toolbar #v25NewUnassigned{grid-column:1/-1}}
-    @media(max-width:680px){#v25Dispatch.v251-ready .v25-summary,#v25Dispatch.v251-ready .v25-toolbar{grid-template-columns:1fr}.v25-toolbar #v25Search,.v25-toolbar #v25NewUnassigned{grid-column:auto}}
-  `;
-  document.head.appendChild(style);
+    #v24OverviewBtn,#v25DispatchBtn{display:none!important}.v26-dialog{border:0;border-radius:16px;padding:0;background:#fff;box-shadow:0 28px 90px rgba(15,23,42,.36);max-height:calc(100vh - 28px);overflow:hidden}.v26-dialog::backdrop{background:rgba(15,23,42,.58);backdrop-filter:blur(2px)}.v26-manager{width:min(1180px,calc(100vw - 28px))}.v26-move{width:min(720px,calc(100vw - 28px))}.v26-editor{width:min(860px,calc(100vw - 28px))}.v26-inner{padding:20px;display:flex;flex-direction:column;max-height:calc(100vh - 28px);box-sizing:border-box}.v26-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}.v26-head h2{margin:2px 0 0;font-size:20px;color:#172033}.v26-kicker{font-size:9px;font-weight:900;letter-spacing:.12em;color:#94a3b8}.v26-close{border:0;background:#f1f5f9;width:32px;height:32px;border-radius:8px;font-size:20px;color:#64748b;cursor:pointer}.v26-summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-bottom:10px}.v26-card{border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;padding:9px 10px}.v26-card span{display:block;font-size:9px;color:#7c899a;font-weight:800}.v26-card strong{display:block;font-size:17px;color:#1e293b;margin-top:3px}.v26-tabs{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.v26-tab{border:1px solid #dbe3ed;background:#fff;color:#526176;border-radius:999px;padding:6px 11px;font-size:10px;font-weight:800;cursor:pointer}.v26-tab.active{background:#0f172a;border-color:#0f172a;color:#fff}.v26-tab span{opacity:.72;margin-left:4px}.v26-toolbar{display:grid;grid-template-columns:minmax(220px,2fr) repeat(4,minmax(120px,1fr)) auto;gap:8px;margin-bottom:10px}.v26-toolbar .field{width:100%}.v26-toolbar .btn{white-space:nowrap}.v26-selection{display:none;align-items:center;gap:7px;padding:8px 10px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px;margin-bottom:10px;flex-wrap:wrap}.v26-selection.show{display:flex}.v26-selection strong{font-size:11px;color:#1e3a8a}.v26-selection .spacer{flex:1}.v26-selection .btn{min-height:30px;padding:5px 9px;font-size:10px}.v26-note{font-size:10px;color:#7a8798;margin:2px 0 8px}.v26-table-wrap{border:1px solid #e2e8f0;border-radius:11px;overflow:auto;max-height:55vh;min-height:260px}.v26-table{width:100%;border-collapse:collapse;font-size:11px}.v26-table th{position:sticky;top:0;z-index:2;background:#f8fafc;color:#64748b;font-size:9px;text-align:left;padding:9px 8px;border-bottom:1px solid #dbe3ed;white-space:nowrap}.v26-table td{padding:8px;border-bottom:1px solid #edf1f5;color:#334155;vertical-align:middle}.v26-table tbody tr:hover{background:#f8fbff}.v26-table tbody tr.selected-row{background:#eff6ff}.v26-check{width:16px;height:16px;cursor:pointer}.v26-name strong{display:block;color:#1e293b}.v26-sub{font-size:9px;color:#94a3b8;margin-top:2px}.v26-path{font-size:9px;color:#64748b;line-height:1.45}.v26-chip{display:inline-flex;border-radius:999px;padding:3px 7px;font-size:9px;font-weight:800;background:#f1f5f9;color:#475569}.v26-chip.unassigned{background:#fef3c7;color:#92400e}.v26-empty{padding:36px 12px;text-align:center;color:#94a3b8}.v26-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.v26-grid.three{grid-template-columns:repeat(3,1fr)}.v26-grid label{font-size:10px;font-weight:800;color:#64748b;display:grid;gap:5px}.v26-grid .full{grid-column:1/-1}.v26-actions{display:flex;gap:8px;align-items:center;border-top:1px solid #edf1f5;padding-top:14px;margin-top:16px}.v26-actions .spacer{flex:1}.v26-preview{border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;padding:10px;margin-top:12px;max-height:210px;overflow:auto}.v26-preview h4{margin:0 0 7px;font-size:11px;color:#334155}.v26-preview-row{display:flex;justify-content:space-between;gap:12px;font-size:10px;padding:5px 0;border-bottom:1px dashed #e2e8f0}.v26-preview-row:last-child{border-bottom:0}.v26-preview .ok{color:#166534}.v26-preview .bad{color:#b91c1c;font-weight:800}.v26-current{border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;padding:10px;margin-bottom:12px;font-size:10px;color:#64748b}.v26-current strong{display:block;color:#1e293b;font-size:12px;margin-bottom:3px}.v26-inspector-move{white-space:nowrap}@media(max-width:1050px){.v26-summary{grid-template-columns:repeat(3,1fr)}.v26-toolbar{grid-template-columns:1fr 1fr 1fr}.v26-toolbar input{grid-column:1/-1}.v26-toolbar .v26-add{grid-column:1/-1}}@media(max-width:680px){.v26-summary,.v26-toolbar,.v26-grid,.v26-grid.three{grid-template-columns:1fr}.v26-toolbar input,.v26-toolbar .v26-add{grid-column:auto}}
+  `;document.head.appendChild(style);
 
   function readState(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||"null");}catch{return null;}}
-  function allSites(state){
-    const set=new Set();
-    (state?.locationDirectory?.sites||[]).forEach(s=>{const n=norm(s?.name);if(n)set.add(n);});
-    (state?.racks||[]).forEach(r=>set.add(siteOf(r)));
-    return [...set].filter(Boolean).sort((a,b)=>a.localeCompare(b,"zh-Hant"));
-  }
-  function allRooms(state,site=""){
-    const set=new Set();
-    (state?.locationDirectory?.sites||[]).forEach(s=>{
-      const sn=norm(s?.name);if(site&&sn!==site)return;
-      (s?.rooms||[]).forEach(r=>{const n=norm(r);if(n)set.add(n);});
-    });
-    (state?.racks||[]).forEach(r=>{if(site&&siteOf(r)!==site)return;set.add(roomOf(r));});
-    return [...set].filter(Boolean).sort((a,b)=>a.localeCompare(b,"zh-Hant"));
-  }
-  function allDevices(state){
-    const mounted=[];(state?.racks||[]).forEach(r=>(r.devices||[]).forEach(d=>mounted.push({d,r,site:siteOf(r),room:roomOf(r)})));
-    const pool=Array.isArray(state?.unassignedDevices)?state.unassignedDevices:[];
-    return {mounted,pool,all:[...mounted.map(x=>x.d),...pool]};
-  }
+  function clone(v){return JSON.parse(JSON.stringify(v));}
+  function ensurePool(s){if(!Array.isArray(s.unassignedDevices))s.unassignedDevices=[];return s.unassignedDevices;}
+  function siteOf(r){return norm(r?.siteName)||DEFAULT_SITE;}function roomOf(r){return norm(r?.roomName)||norm(r?.location)||DEFAULT_ROOM;}
+  function defaultWidth(i){if(i==="shelf")return 58;if(i==="tower")return 36;return 100;}
+  function hRange(widthPct,xPct){const w=clamp(Number(widthPct)||100,20,100),p=clamp(Number(xPct)||0,0,100),start=(100-w)*(p/100);return{start,end:start+w};}
+  function overlap(a,b){return Math.max(a.start,b.start)<Math.min(a.end,b.end)-.15;}
+  function canPlace(rack,d,topU,side){if(d.installation==="external")return true;const h=Math.max(1,Number(d.height)||1),top=Number(topU),bottom=top-h+1;if(!Number.isFinite(top)||top>Number(rack.units)||bottom<1)return false;const inst=d.installation||"rack",cr=hRange(inst==="rack"?100:(d.widthPct||defaultWidth(inst)),inst==="rack"?50:(d.xPct??50));return !(rack.devices||[]).some(x=>{if(x.installation==="external"||(x.side||"front")!==side)return false;const xt=Number(x.u)||1,xh=Math.max(1,Number(x.height)||1),xb=xt-xh+1;if(Math.max(bottom,xb)>Math.min(top,xt))return false;if(inst==="rack"||x.installation==="rack")return true;return overlap(cr,hRange(x.widthPct||defaultWidth(x.installation),x.xPct??50));});}
+  function findFree(rack,d,side){if(d.installation==="external")return null;const h=Math.max(1,Number(d.height)||1);for(let u=Number(rack.units)||42;u>=h;u--)if(canPlace(rack,d,u,side))return u;return null;}
+  function uLabel(d){if(d.installation==="external")return"周邊";if(d.u==null)return"未上架";const top=Number(d.u)||1,h=Math.max(1,Number(d.height)||1),bottom=top-h+1;return h>1?`U${bottom}–U${top}`:`U${top}`;}
+  function toast(msg,type="success"){const st=$("toastStack");if(!st)return;const e=document.createElement("div");e.className=`toast ${type}`;e.textContent=msg;st.appendChild(e);setTimeout(()=>e.remove(),2800);}
+  function sync(next,message,after){const input=$("jsonImport");if(!input){localStorage.setItem(STORAGE_KEY,JSON.stringify(next));toast(message);after?.();return;}try{const file=new File([JSON.stringify(next)],"rack-manager-v26-sync.json",{type:"application/json"}),dt=new DataTransfer();dt.items.add(file);input.files=dt.files;const old=window.confirm;let approve=true;window.confirm=function(text){if(approve&&String(text||"").includes("將匯入")){approve=false;window.confirm=old;return true;}return old.apply(this,arguments);};input.dispatchEvent(new Event("change",{bubbles:true}));setTimeout(()=>{if(window.confirm!==old)window.confirm=old;document.querySelectorAll("#toastStack .toast").forEach(t=>{if(t.textContent.includes("JSON 備份已匯入"))t.textContent=message;});after?.();},230);}catch(err){console.error("V2.6 sync",err);localStorage.setItem(STORAGE_KEY,JSON.stringify(next));toast("資料已儲存，請重新整理頁面","error");after?.();}}
+  function allRows(state){const rows=[];(state?.racks||[]).forEach(r=>(r.devices||[]).forEach(d=>rows.push({key:`m|${r.id}|${d.id}`,kind:"mounted",rack:r,d,site:siteOf(r),room:roomOf(r)})));ensurePool(state||{}).forEach(d=>rows.push({key:`u||${d.id}`,kind:"unassigned",rack:null,d,site:"",room:""}));return rows;}
+  function resolveRef(state,ref){if(ref.kind==="unassigned"){const d=ensurePool(state).find(x=>x.id===ref.deviceId);return d?{kind:"unassigned",rack:null,d}:null;}const rack=(state.racks||[]).find(r=>r.id===ref.rackId),d=rack?.devices?.find(x=>x.id===ref.deviceId);return d?{kind:"mounted",rack,d}:null;}
+  function refFromKey(key){const[k,r,d]=String(key).split("|");return{kind:k==="u"?"unassigned":"mounted",rackId:r||"",deviceId:d||""};}
 
-  let roomFilter=null,typeFilter=null,statusFilter=null,tabs=null,tbodyObserver=null,postScheduled=false,popup=null;
+  document.title="Rack Manager｜機櫃管理工具 V2.6";const brand=document.querySelector(".brand p");if(brand)brand.textContent="機櫃管理工具 V2.6";const badge=document.querySelector("#v2Hierarchy .v231-version-badge")||document.querySelector("#v2Hierarchy .badge");if(badge)badge.textContent="V2.6";
+  function installManageButton(){if($("v26ManageBtn"))return;const actions=document.querySelector(".top-actions");if(!actions)return;const b=document.createElement("button");b.className="btn";b.id="v26ManageBtn";b.textContent="設備管理";const anchor=$("v25DispatchBtn")||$("v24OverviewBtn");anchor?anchor.after(b):actions.insertBefore(b,actions.firstChild);b.onclick=openManager;}installManageButton();
 
-  function installTop(){
-    document.title="Rack Manager｜機櫃管理工具 V2.5.2";
-    const brand=document.querySelector(".brand p");if(brand)brand.textContent="機櫃管理工具 V2.5.2";
-    const overview=$("v24OverviewBtn");if(overview)overview.style.display="none";
-    const dispatch=$("v25DispatchBtn");
-    if(dispatch){dispatch.textContent="設備管理";dispatch.title="搜尋、篩選、定位、移動、上架與管理設備";}
-    const badge=document.querySelector("#v2Hierarchy .v231-version-badge")||document.querySelector("#v2Hierarchy .badge");
-    if(badge)badge.textContent="V2.5.2";
-  }
+  let lastSelectedDeviceId="";document.addEventListener("click",e=>{const el=e.target.closest?.("[data-id]");if(!el)return;const state=readState(),rack=(state?.racks||[]).find(r=>r.id===state.activeRackId);if(rack?.devices?.some(d=>String(d.id)===String(el.dataset.id)))lastSelectedDeviceId=String(el.dataset.id);},true);
+  function currentSelected(){const state=readState();if(!state)return null;const rack=(state.racks||[]).find(r=>r.id===state.activeRackId);if(!rack)return null;let id=document.querySelector("#rackGrid .rack-device.selected")?.dataset.id||lastSelectedDeviceId,d=rack.devices?.find(x=>String(x.id)===String(id));if(!d){const name=norm($("inspectName")?.textContent),m=(rack.devices||[]).filter(x=>norm(x.name)===name);if(m.length===1)d=m[0];}return d?{state,rack,d}:null;}
+  function installInspectorMove(){const actions=document.querySelector(".inspector-actions");if(!actions||$("v26InspectorMove"))return;const b=document.createElement("button");b.className="btn v26-inspector-move";b.id="v26InspectorMove";b.textContent="移動設備";$("btnEditDevice")?.after(b);b.onclick=()=>{const cur=currentSelected();if(!cur){toast("請先選取要移動的設備","error");return;}openMove([{kind:"mounted",rackId:cur.rack.id,deviceId:cur.d.id}]);};}installInspectorMove();
 
-  function buildTabs(dialog){
-    if($("v251Tabs")){tabs=$("v251Tabs");return;}
-    tabs=document.createElement("div");tabs.id="v251Tabs";tabs.className="v251-tabs";
-    tabs.innerHTML=`<button class="v251-tab active" data-kind="">全部設備 <span>0</span></button><button class="v251-tab" data-kind="mounted">已上架 <span>0</span></button><button class="v251-tab" data-kind="unassigned">未上架 <span>0</span></button>`;
-    const toolbar=dialog.querySelector(".v25-toolbar");toolbar?.before(tabs);
-    tabs.addEventListener("click",e=>{
-      const btn=e.target.closest(".v251-tab");if(!btn)return;
-      const kind=$("v25Kind");if(!kind)return;
-      kind.value=btn.dataset.kind||"";
-      kind.dispatchEvent(new Event("change",{bubbles:true}));
-      updateTabs();
-      schedulePostProcess();
-    });
-  }
+  let manager=null,tbody=null,search=null,siteSel=null,roomSel=null,typeSel=null,statusSel=null,currentKind="",selected=new Set();
+  function buildManager(){if($("v26Manager")){manager=$("v26Manager");return;}manager=document.createElement("dialog");manager.className="v26-dialog v26-manager";manager.id="v26Manager";manager.innerHTML=`<div class="v26-inner"><div class="v26-head"><div><span class="v26-kicker">DEVICE MANAGEMENT</span><h2>設備管理</h2></div><button class="v26-close" id="v26ManagerClose">×</button></div><div class="v26-summary" id="v26Summary"></div><div class="v26-tabs" id="v26Tabs"><button class="v26-tab active" data-kind="">全部設備 <span>0</span></button><button class="v26-tab" data-kind="mounted">已上架 <span>0</span></button><button class="v26-tab" data-kind="unassigned">未上架 <span>0</span></button></div><div class="v26-toolbar"><input class="field" id="v26Search" placeholder="搜尋設備名稱、IP、Hostname、型號、序號、資產編號…"><select class="field" id="v26Site"></select><select class="field" id="v26Room"></select><select class="field" id="v26Type"></select><select class="field" id="v26Status"></select><button class="btn primary v26-add" id="v26AddUnassigned">＋ 新增未上架設備</button></div><div class="v26-selection" id="v26Selection"><strong id="v26SelectedCount">已選取 0 台</strong><span class="spacer"></span><button class="btn" id="v26Locate">定位</button><button class="btn primary" id="v26MoveSelected">移動 / 上架</button><button class="btn" id="v26UnmountSelected">移出機櫃</button><button class="btn" id="v26StatusSelected">變更狀態</button><button class="btn danger" id="v26DeleteUnassigned">刪除</button><button class="btn" id="v26ClearSelected">取消選取</button></div><div class="v26-note" id="v26Count"></div><div class="v26-table-wrap"><table class="v26-table"><thead><tr><th style="width:34px"><input type="checkbox" class="v26-check" id="v26SelectAll" title="全選目前結果"></th><th>設備</th><th>類型</th><th>IP / Hostname</th><th>位置</th><th>U 位</th><th>狀態</th></tr></thead><tbody id="v26Body"></tbody></table></div></div>`;document.body.appendChild(manager);tbody=$("v26Body");search=$("v26Search");siteSel=$("v26Site");roomSel=$("v26Room");typeSel=$("v26Type");statusSel=$("v26Status");$("v26ManagerClose").onclick=()=>manager.close();$("v26Tabs").onclick=e=>{const b=e.target.closest(".v26-tab");if(!b)return;currentKind=b.dataset.kind||"";selected.clear();renderManager();};[search,siteSel,roomSel,typeSel,statusSel].forEach(el=>el.addEventListener(el===search?"input":"change",()=>{if(el===siteSel)fillManagerFilters(true);renderManager();}));$("v26SelectAll").onchange=e=>{visibleRows().forEach(x=>e.target.checked?selected.add(x.key):selected.delete(x.key));renderManager();};$("v26ClearSelected").onclick=()=>{selected.clear();renderManager();};$("v26Locate").onclick=locateSelected;$("v26MoveSelected").onclick=()=>openMove(selectedRefs());$("v26UnmountSelected").onclick=unmountSelected;$("v26StatusSelected").onclick=openStatusDialog;$("v26DeleteUnassigned").onclick=deleteSelectedUnassigned;$("v26AddUnassigned").onclick=()=>openEditor(null);tbody.addEventListener("change",e=>{const c=e.target.closest(".v26-row-check");if(!c)return;c.checked?selected.add(c.dataset.key):selected.delete(c.dataset.key);updateSelectionBar();c.closest("tr")?.classList.toggle("selected-row",c.checked);});}
+  function fillManagerFilters(preserve=false){const state=readState();if(!state)return;const rows=allRows(state),keep=(sel,vals,label)=>{const old=preserve?sel.value:"";sel.innerHTML=`<option value="">${label}</option>`+vals.map(([v,t])=>`<option value="${esc(v)}">${esc(t)}</option>`).join("");if(vals.some(x=>x[0]===old))sel.value=old;};keep(siteSel,[...new Set((state.racks||[]).map(siteOf))].sort((a,b)=>a.localeCompare(b,"zh-Hant")).map(x=>[x,x]),"全部據點");keep(roomSel,[...new Set((state.racks||[]).filter(r=>!siteSel.value||siteOf(r)===siteSel.value).map(roomOf))].sort((a,b)=>a.localeCompare(b,"zh-Hant")).map(x=>[x,x]),"全部機房");keep(typeSel,[...new Set(rows.map(x=>x.d.type).filter(Boolean))].sort().map(x=>[x,TYPE_LABELS[x]||x]),"全部類型");keep(statusSel,[...new Set(rows.map(x=>norm(x.d.status)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"zh-Hant")).map(x=>[x,x]),"全部狀態");}
+  function visibleRows(){const state=readState();if(!state)return[];const q=norm(search?.value).toLowerCase(),site=siteSel?.value||"",room=roomSel?.value||"",type=typeSel?.value||"",status=statusSel?.value||"";return allRows(state).filter(x=>{if(currentKind&&x.kind!==currentKind)return false;if(site&&(x.kind!=="mounted"||x.site!==site))return false;if(room&&(x.kind!=="mounted"||x.room!==room))return false;if(type&&x.d.type!==type)return false;if(status&&norm(x.d.status)!==status)return false;if(!q)return true;return[x.d.name,x.d.ip,x.d.hostname,x.d.model,x.d.serial,x.d.asset,x.d.brand,x.d.mac,x.d.owner,x.d.status,TYPE_LABELS[x.d.type],x.site,x.room,x.rack?.name].map(v=>norm(v).toLowerCase()).join(" ").includes(q);}).sort((a,b)=>a.kind!==b.kind?(a.kind==="unassigned"?1:-1):(a.site||"").localeCompare(b.site||"","zh-Hant")||(a.room||"").localeCompare(b.room||"","zh-Hant")||String(a.rack?.name||"").localeCompare(String(b.rack?.name||""),"zh-Hant")||String(a.d.name||"").localeCompare(String(b.d.name||""),"zh-Hant"));}
+  function renderManager(){const state=readState();if(!state||!tbody)return;const all=allRows(state),mounted=all.filter(x=>x.kind==="mounted"),pool=all.filter(x=>x.kind==="unassigned");$("v26Summary").innerHTML=`<div class="v26-card"><span>據點</span><strong>${new Set((state.racks||[]).map(siteOf)).size}</strong></div><div class="v26-card"><span>機房</span><strong>${new Set((state.racks||[]).map(r=>`${siteOf(r)}|${roomOf(r)}`)).size}</strong></div><div class="v26-card"><span>機櫃</span><strong>${(state.racks||[]).length}</strong></div><div class="v26-card"><span>全部設備</span><strong>${all.length}</strong></div><div class="v26-card"><span>已上架</span><strong>${mounted.length}</strong></div><div class="v26-card"><span>未上架</span><strong>${pool.length}</strong></div>`;const counts={"":all.length,mounted:mounted.length,unassigned:pool.length};document.querySelectorAll("#v26Tabs .v26-tab").forEach(b=>{b.classList.toggle("active",(b.dataset.kind||"")===currentKind);b.querySelector("span").textContent=counts[b.dataset.kind||""]||0;});const rows=visibleRows();$("v26Count").textContent=`顯示 ${rows.length} / ${all.length} 台設備`;tbody.innerHTML=rows.length?rows.map(x=>{const pos=x.kind==="mounted"?`${esc(x.site)} › ${esc(x.room)} › ${esc(x.rack.name)} › ${esc(x.d.side==="rear"?"REAR":"FRONT")}`:`<span class="v26-chip unassigned">未上架</span>`;return`<tr class="${selected.has(x.key)?"selected-row":""}"><td><input type="checkbox" class="v26-check v26-row-check" data-key="${esc(x.key)}" ${selected.has(x.key)?"checked":""}></td><td class="v26-name"><strong>${esc(x.d.name||"未命名設備")}</strong><div class="v26-sub">${esc([x.d.brand,x.d.model].filter(Boolean).join(" · ")||"—")}</div></td><td>${esc(TYPE_LABELS[x.d.type]||x.d.type||"其他")}<div class="v26-sub">${esc(INSTALL_LABELS[x.d.installation]||"機架式")} · ${esc(String(x.d.height||1))}U</div></td><td>${esc(x.d.ip||"—")}<div class="v26-sub">${esc(x.d.hostname||"")}</div></td><td><div class="v26-path">${pos}</div></td><td>${esc(uLabel(x.d))}</td><td>${esc(x.d.status||"正常")}</td></tr>`;}).join(""):`<tr><td colspan="7"><div class="v26-empty">沒有符合條件的設備</div></td></tr>`;const vis=rows.map(x=>x.key),allChecked=vis.length&&vis.every(k=>selected.has(k));$("v26SelectAll").checked=!!allChecked;$("v26SelectAll").indeterminate=!allChecked&&vis.some(k=>selected.has(k));updateSelectionBar();}
+  function selectedRefs(){return[...selected].map(refFromKey);}function updateSelectionBar(){const refs=selectedRefs(),bar=$("v26Selection");bar.classList.toggle("show",refs.length>0);$("v26SelectedCount").textContent=`已選取 ${refs.length} 台`;const state=readState(),ctx=refs.map(r=>resolveRef(state,r)).filter(Boolean),single=ctx.length===1,allMounted=ctx.length>0&&ctx.every(x=>x.kind==="mounted"),allPool=ctx.length>0&&ctx.every(x=>x.kind==="unassigned");$("v26Locate").style.display=single&&allMounted?"":"none";$("v26UnmountSelected").style.display=allMounted?"":"none";$("v26DeleteUnassigned").style.display=allPool?"":"none";$("v26MoveSelected").textContent=allPool?"上架":ctx.length>1?"批次移動":"移動 / 上架";}
+  function openManager(){buildManager();fillManagerFilters(true);renderManager();manager.showModal();setTimeout(()=>search.focus(),30);}function locateSelected(){const ref=selectedRefs()[0],state=readState(),ctx=resolveRef(state,ref);if(!ctx?.rack)return;manager.close();const sel=$("rackSelect");if(sel&&sel.value!==ctx.rack.id){sel.value=ctx.rack.id;sel.dispatchEvent(new Event("change",{bubbles:true}));}setTimeout(()=>{if(ctx.d.installation!=="external"){const f=document.querySelector(`.face-toggle button[data-face="${ctx.d.side||"front"}"]`);if(f&&!f.classList.contains("active"))f.click();}setTimeout(()=>{const el=document.querySelector(`#rackGrid .rack-device[data-id="${CSS.escape(String(ctx.d.id))}"]`);el?.click();el?.scrollIntoView({behavior:"smooth",block:"center"});},120);},100);}
+  function unmountSelected(){const refs=selectedRefs(),state=readState();if(!state||!refs.length)return;const ctx=refs.map(r=>resolveRef(state,r)).filter(Boolean);if(!ctx.length||ctx.some(x=>x.kind!=="mounted"))return;if(!confirm(`確定將選取的 ${ctx.length} 台設備移出機櫃，放到未上架設備區？`))return;const next=clone(state),pool=ensurePool(next),now=new Date().toISOString();refs.forEach(ref=>{const rack=next.racks.find(r=>r.id===ref.rackId),i=rack?.devices?.findIndex(d=>d.id===ref.deviceId)??-1;if(i<0)return;const[d]=rack.devices.splice(i,1);d.lastRack={rackId:rack.id,rackName:rack.name,site:siteOf(rack),room:roomOf(rack)};d.u=null;d.unassignedAt=now;pool.push(d);rack.updatedAt=now;});selected.clear();sync(next,`${ctx.length} 台設備已移到未上架區`,()=>{fillManagerFilters(true);renderManager();});}
+  function deleteSelectedUnassigned(){const refs=selectedRefs(),state=readState();if(!state||!refs.length)return;const ctx=refs.map(r=>resolveRef(state,r)).filter(Boolean);if(ctx.some(x=>x.kind!=="unassigned"))return;if(!confirm(`確定刪除選取的 ${ctx.length} 台未上架設備？`))return;const ids=new Set(refs.map(r=>r.deviceId)),next=clone(state);next.unassignedDevices=ensurePool(next).filter(d=>!ids.has(d.id));selected.clear();sync(next,`${ids.size} 台未上架設備已刪除`,()=>renderManager());}
 
-  function buildExtraFilters(dialog){
-    const toolbar=dialog.querySelector(".v25-toolbar");if(!toolbar)return;
-    if($("v251Room")){roomFilter=$("v251Room");typeFilter=$("v251Type");statusFilter=$("v251Status");return;}
-    toolbar.classList.add("v251-toolbar");
-    roomFilter=document.createElement("select");roomFilter.className="field";roomFilter.id="v251Room";
-    typeFilter=document.createElement("select");typeFilter.className="field";typeFilter.id="v251Type";
-    statusFilter=document.createElement("select");statusFilter.className="field";statusFilter.id="v251Status";
-    const add=$("v25NewUnassigned");
-    toolbar.insertBefore(roomFilter,add);toolbar.insertBefore(typeFilter,add);toolbar.insertBefore(statusFilter,add);
-    roomFilter.addEventListener("change",schedulePostProcess);typeFilter.addEventListener("change",schedulePostProcess);statusFilter.addEventListener("change",schedulePostProcess);
-    $("v25Site")?.addEventListener("change",()=>setTimeout(()=>{fillFilterOptions(true);schedulePostProcess();},0));
-  }
+  let statusDialog=null;function openStatusDialog(){const refs=selectedRefs();if(!refs.length)return;if(!$("v26StatusDialog")){statusDialog=document.createElement("dialog");statusDialog.className="v26-dialog";statusDialog.id="v26StatusDialog";statusDialog.innerHTML=`<form class="v26-inner" id="v26StatusForm"><div class="v26-head"><div><span class="v26-kicker">BATCH STATUS</span><h2>批次變更狀態</h2></div><button type="button" class="v26-close" id="v26StatusClose">×</button></div><label style="font-size:10px;font-weight:800;color:#64748b;display:grid;gap:6px">新狀態<select class="field" id="v26NewStatus"><option>正常</option><option>備用</option><option>維修</option><option>停用</option></select></label><div class="v26-actions"><button type="button" class="btn" id="v26StatusCancel">取消</button><span class="spacer"></span><button class="btn primary" type="submit">套用到選取設備</button></div></form>`;document.body.appendChild(statusDialog);$("v26StatusClose").onclick=$("v26StatusCancel").onclick=()=>statusDialog.close();$("v26StatusForm").onsubmit=e=>{e.preventDefault();const state=readState(),next=clone(state),value=$("v26NewStatus").value;selectedRefs().forEach(ref=>{const c=resolveRef(next,ref);if(c)c.d.status=value;});statusDialog.close();sync(next,`已更新 ${selected.size} 台設備狀態`,()=>renderManager());};}statusDialog.showModal();}
 
-  function fillFilterOptions(preserve=true){
-    const state=readState();if(!state)return;
-    const site=$("v25Site"),previousSite=preserve?site?.value:"",sites=allSites(state);
-    if(site){site.innerHTML=`<option value="">全部據點</option>`+sites.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("");if(previousSite&&sites.includes(previousSite))site.value=previousSite;}
-    if(roomFilter){const old=preserve?roomFilter.value:"",rooms=allRooms(state,site?.value||"");roomFilter.innerHTML=`<option value="">全部機房</option>`+rooms.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join("");if(old&&rooms.includes(old))roomFilter.value=old;}
-    const data=allDevices(state),types=[...new Set(data.all.map(d=>d.type).filter(Boolean))].sort();
-    if(typeFilter){const old=preserve?typeFilter.value:"";typeFilter.innerHTML=`<option value="">全部類型</option>`+types.map(t=>`<option value="${esc(t)}">${esc(TYPE_LABELS[t]||t)}</option>`).join("");if(old&&types.includes(old))typeFilter.value=old;}
-    const statuses=[...new Set(data.all.map(d=>norm(d.status)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"zh-Hant"));
-    if(statusFilter){const old=preserve?statusFilter.value:"";statusFilter.innerHTML=`<option value="">全部狀態</option>`+statuses.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("");if(old&&statuses.includes(old))statusFilter.value=old;}
-  }
+  let editor=null,editingPoolId=null;function buildEditor(){if($("v26Editor")){editor=$("v26Editor");return;}editor=document.createElement("dialog");editor.className="v26-dialog v26-editor";editor.id="v26Editor";editor.innerHTML=`<form class="v26-inner" id="v26EditorForm"><div class="v26-head"><div><span class="v26-kicker">UNASSIGNED DEVICE</span><h2 id="v26EditorTitle">新增未上架設備</h2></div><button type="button" class="v26-close" id="v26EditorClose">×</button></div><div class="v26-grid three"><label class="full">設備名稱<input class="field" id="v26EName" required maxlength="80"></label><label>類型<select class="field" id="v26EType">${Object.entries(TYPE_LABELS).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></label><label>安裝形式<select class="field" id="v26EInstall"><option value="rack">機架式</option><option value="shelf">層板式</option><option value="tower">桌上型 / 塔式</option><option value="external">外部設備</option></select></label><label>高度（U）<input class="field" id="v26EHeight" type="number" min="1" max="20" value="1" required></label><label>廠牌<input class="field" id="v26EBrand"></label><label>型號<input class="field" id="v26EModel"></label><label>序號<input class="field" id="v26ESerial"></label><label>資產編號<input class="field" id="v26EAsset"></label><label>Hostname<input class="field" id="v26EHost"></label><label>管理 IP<input class="field" id="v26EIp"></label><label>MAC<input class="field" id="v26EMac"></label><label>VLAN<input class="field" id="v26EVlan"></label><label>管理 Port<input class="field" id="v26EPort"></label><label>負責單位<input class="field" id="v26EOwner"></label><label>狀態<select class="field" id="v26EStatus"><option>正常</option><option>備用</option><option>維修</option><option>停用</option></select></label><label class="full">備註<textarea class="field" id="v26ENote" rows="3"></textarea></label></div><div class="v26-actions"><button type="button" class="btn" id="v26EditorCancel">取消</button><span class="spacer"></span><button class="btn primary" type="submit">儲存</button></div></form>`;document.body.appendChild(editor);$("v26EditorClose").onclick=$("v26EditorCancel").onclick=()=>editor.close();$("v26EditorForm").onsubmit=e=>{e.preventDefault();const state=readState(),next=clone(state),pool=ensurePool(next),now=new Date().toISOString();let d=editingPoolId?pool.find(x=>x.id===editingPoolId):null;if(!d){d={id:uid("dev"),createdAt:now,u:null,side:"front",xPct:50,widthPct:100};pool.push(d);}Object.assign(d,{name:norm($("v26EName").value)||"未命名設備",type:$("v26EType").value,installation:$("v26EInstall").value,height:Math.max(1,Number($("v26EHeight").value)||1),brand:norm($("v26EBrand").value),model:norm($("v26EModel").value),serial:norm($("v26ESerial").value),asset:norm($("v26EAsset").value),hostname:norm($("v26EHost").value),ip:norm($("v26EIp").value),mac:norm($("v26EMac").value),vlan:norm($("v26EVlan").value),port:norm($("v26EPort").value),owner:norm($("v26EOwner").value),status:$("v26EStatus").value,note:norm($("v26ENote").value),u:null,updatedAt:now,unassignedAt:d.unassignedAt||now});d.widthPct=d.installation==="rack"?100:(Number(d.widthPct)||defaultWidth(d.installation));editor.close();sync(next,editingPoolId?"未上架設備已更新":"未上架設備已新增",()=>{fillManagerFilters(true);renderManager();});};}
+  function openEditor(id){buildEditor();editingPoolId=id||null;const d=id?ensurePool(readState()).find(x=>x.id===id):null;$("v26EditorTitle").textContent=d?"編輯未上架設備":"新增未上架設備";const set=(i,v)=>$(i).value=v??"";set("v26EName",d?.name);set("v26EType",d?.type||"other");set("v26EInstall",d?.installation||"rack");set("v26EHeight",d?.height||1);set("v26EBrand",d?.brand);set("v26EModel",d?.model);set("v26ESerial",d?.serial);set("v26EAsset",d?.asset);set("v26EHost",d?.hostname);set("v26EIp",d?.ip);set("v26EMac",d?.mac);set("v26EVlan",d?.vlan);set("v26EPort",d?.port);set("v26EOwner",d?.owner);set("v26EStatus",d?.status||"正常");set("v26ENote",d?.note);editor.showModal();}
 
-  function updateTabs(){
-    const state=readState();if(!state||!tabs)return;const data=allDevices(state),kind=$("v25Kind")?.value||"";
-    const counts={"":data.all.length,mounted:data.mounted.length,unassigned:data.pool.length};
-    tabs.querySelectorAll(".v251-tab").forEach(b=>{b.classList.toggle("active",(b.dataset.kind||"")===kind);const s=b.querySelector("span");if(s)s.textContent=String(counts[b.dataset.kind||""]||0);});
-  }
-
-  function updateSummary(){
-    const state=readState(),summary=$("v25Summary");if(!state||!summary)return;const data=allDevices(state);
-    const sites=new Set((state.racks||[]).map(siteOf)).size,rooms=new Set((state.racks||[]).map(r=>`${siteOf(r)}\u241f${roomOf(r)}`)).size,racks=(state.racks||[]).length;
-    summary.innerHTML=`<div class="v25-card"><span>據點</span><strong>${sites}</strong></div><div class="v25-card"><span>機房</span><strong>${rooms}</strong></div><div class="v25-card"><span>機櫃</span><strong>${racks}</strong></div><div class="v25-card"><span>全部設備</span><strong>${data.all.length}</strong></div><div class="v25-card"><span>已上架</span><strong>${data.mounted.length}</strong></div><div class="v25-card"><span>未上架</span><strong>${data.pool.length}</strong></div>`;
-  }
-
-  function firstCellLabel(td){
-    if(!td)return"";for(const n of td.childNodes){if(n.nodeType===Node.TEXT_NODE&&norm(n.textContent))return norm(n.textContent);if(n.nodeType===Node.ELEMENT_NODE&&n.tagName!=="DIV")return norm(n.textContent);}return norm(td.textContent);
-  }
-
-  function applyExtraFilters(){
-    const body=$("v25Body");if(!body)return;const room=roomFilter?.value||"",type=typeFilter?.value||"",status=statusFilter?.value||"";
-    let visible=0;
-    body.querySelectorAll("tr").forEach(tr=>{
-      if(tr.querySelector(".v25-empty")){tr.style.display="";return;}
-      const cells=tr.cells;if(cells.length<6)return;
-      const path=norm(cells[3].querySelector(".v25-path")?.textContent),typeLabel=firstCellLabel(cells[1]),statusLabel=norm(cells[4].textContent);
-      let show=true;
-      if(room&&!path.split("›").map(norm).includes(room))show=false;
-      if(type&&(TYPE_LABELS[type]||type)!==typeLabel)show=false;
-      if(status&&status!==statusLabel)show=false;
-      tr.style.display=show?"":"none";if(show)visible++;
-    });
-    const state=readState(),total=state?allDevices(state).all.length:0,count=$("v25Count");
-    if(count)count.innerHTML=`顯示 <strong>${visible}</strong> / ${total} 台設備${visible===0?` <span class="v251-zero-note">· 沒有符合目前篩選條件的設備</span>`:""}`;
-  }
-
-  function closePopup(){popup?.remove();popup=null;}
-  function openPopup(trigger,originals){
-    closePopup();
-    const dialog=$("v25Dispatch");if(!dialog)return;
-    popup=document.createElement("div");popup.className="v251-action-popup";
-    originals.forEach(original=>{
-      const b=document.createElement("button");b.type="button";b.textContent=norm(original.textContent)||"操作";
-      if(original.classList.contains("danger")||original.classList.contains("unmount"))b.classList.add("danger");
-      b.onclick=e=>{e.stopPropagation();closePopup();original.click();};
-      popup.appendChild(b);
-    });
-    dialog.appendChild(popup);
-    const r=trigger.getBoundingClientRect(),pr=popup.getBoundingClientRect();
-    let left=Math.max(8,Math.min(window.innerWidth-pr.width-8,r.right-pr.width));
-    let top=r.bottom+5;
-    if(top+pr.height>window.innerHeight-8)top=Math.max(8,r.top-pr.height-5);
-    popup.style.left=`${left}px`;popup.style.top=`${top}px`;
-  }
-  function enhanceMenus(){
-    $("v25Body")?.querySelectorAll(".v25-actions").forEach(actions=>{
-      if(actions.dataset.v251)return;
-      const originals=[...actions.querySelectorAll(":scope > button")];if(!originals.length)return;
-      actions.dataset.v251="1";originals.forEach(b=>b.style.display="none");
-      const more=document.createElement("button");more.type="button";more.className="v251-menu-trigger";more.textContent="⋯";more.title="設備操作";
-      more.onclick=e=>{e.preventDefault();e.stopPropagation();openPopup(more,originals);};
-      actions.appendChild(more);
-    });
-  }
-
-  function schedulePostProcess(){if(postScheduled)return;postScheduled=true;requestAnimationFrame(()=>{postScheduled=false;updateSummary();updateTabs();enhanceMenus();applyExtraFilters();});}
-
-  function enhanceDialog(){
-    const dialog=$("v25Dispatch");if(!dialog)return;
-    dialog.classList.add("v251-ready");
-    const kicker=dialog.querySelector(".v25-kicker"),title=dialog.querySelector(".v25-head h2");if(kicker)kicker.textContent="DEVICE MANAGEMENT";if(title)title.textContent="設備管理";
-    buildTabs(dialog);buildExtraFilters(dialog);fillFilterOptions(true);updateTabs();
-    const body=$("v25Body");if(body&&!tbodyObserver){tbodyObserver=new MutationObserver(schedulePostProcess);tbodyObserver.observe(body,{childList:true,subtree:true});}
-    if(!dialog.dataset.v252CloseHook){dialog.dataset.v252CloseHook="1";dialog.addEventListener("close",closePopup);}
-    schedulePostProcess();
-  }
-
-  document.addEventListener("click",e=>{
-    if(e.target.closest?.("#v25DispatchBtn"))setTimeout(enhanceDialog,0);
-    if(popup&&!e.target.closest?.(".v251-action-popup")&&!e.target.closest?.(".v251-menu-trigger"))closePopup();
-  });
-  window.addEventListener("resize",closePopup);document.addEventListener("scroll",closePopup,true);
-
-  installTop();
+  let moveDialog=null,moveRefs=[],planCache=null;function buildMove(){if($("v26Move")){moveDialog=$("v26Move");return;}moveDialog=document.createElement("dialog");moveDialog.className="v26-dialog v26-move";moveDialog.id="v26Move";moveDialog.innerHTML=`<form class="v26-inner" id="v26MoveForm"><div class="v26-head"><div><span class="v26-kicker">RACK ASSIGNMENT</span><h2 id="v26MoveTitle">移動設備</h2></div><button type="button" class="v26-close" id="v26MoveClose">×</button></div><div class="v26-current" id="v26MoveCurrent"></div><div class="v26-grid"><label>目標據點<select class="field" id="v26TargetSite"></select></label><label>目標機房<select class="field" id="v26TargetRoom"></select></label><label class="full">目標機櫃<select class="field" id="v26TargetRack"></select></label><label>安裝面<select class="field" id="v26TargetSide"><option value="front">FRONT 正面</option><option value="rear">REAR 背面</option></select></label><label id="v26ManualWrap">最高 U 位（單台可手動）<input class="field" id="v26TargetU" type="number" min="1" placeholder="留空＝自動找空位"></label></div><div class="v26-preview" id="v26Preview"></div><div class="v26-actions"><button type="button" class="btn" id="v26MoveCancel">取消</button><span class="spacer"></span><button class="btn primary" type="submit" id="v26MoveSubmit">確認移動</button></div></form>`;document.body.appendChild(moveDialog);$("v26MoveClose").onclick=$("v26MoveCancel").onclick=()=>moveDialog.close();["v26TargetSite","v26TargetRoom","v26TargetRack","v26TargetSide","v26TargetU"].forEach(id=>$(id).addEventListener(id==="v26TargetU"?"input":"change",()=>{if(id==="v26TargetSite"){fillMoveRooms();fillMoveRacks();}else if(id==="v26TargetRoom")fillMoveRacks();refreshPlan();}));$("v26MoveForm").onsubmit=e=>{e.preventDefault();commitPlan();};}
+  function openMove(refs){if(!refs?.length){toast("請先選擇設備","error");return;}buildMove();moveRefs=refs.map(r=>({...r}));const state=readState(),ctx=moveRefs.map(r=>resolveRef(state,r)).filter(Boolean);if(ctx.length!==moveRefs.length){toast("部分設備資料已變更，請重新選取","error");return;}$("v26MoveTitle").textContent=ctx.length>1?`批次移動 ${ctx.length} 台設備`:(ctx[0].kind==="unassigned"?"未上架設備上架":"移動設備");$("v26MoveCurrent").innerHTML=ctx.slice(0,6).map(x=>`<strong>${esc(x.d.name)}</strong><span>${x.rack?`${esc(siteOf(x.rack))} › ${esc(roomOf(x.rack))} › ${esc(x.rack.name)} › ${esc(uLabel(x.d))}`:"目前：未上架"}</span>`).join("")+(ctx.length>6?`<span>另有 ${ctx.length-6} 台…</span>`:"");const sites=[...new Set((state.racks||[]).map(siteOf))].sort((a,b)=>a.localeCompare(b,"zh-Hant"));$("v26TargetSite").innerHTML=sites.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("");const first=ctx.find(x=>x.rack);if(first&&sites.includes(siteOf(first.rack)))$("v26TargetSite").value=siteOf(first.rack);fillMoveRooms(first?.rack?roomOf(first.rack):"");fillMoveRacks(first?.rack?.id||"");$("v26TargetSide").value=ctx[0].d.side==="rear"?"rear":"front";$("v26TargetU").value="";$("v26ManualWrap").style.display=ctx.length===1&&ctx[0].d.installation!=="external"?"":"none";refreshPlan();moveDialog.showModal();}
+  function fillMoveRooms(preferred=""){const st=readState(),site=$("v26TargetSite").value,rooms=[...new Set((st?.racks||[]).filter(r=>siteOf(r)===site).map(roomOf))].sort((a,b)=>a.localeCompare(b,"zh-Hant"));$("v26TargetRoom").innerHTML=rooms.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join("");if(rooms.includes(preferred))$("v26TargetRoom").value=preferred;}
+  function fillMoveRacks(preferred=""){const st=readState(),site=$("v26TargetSite").value,room=$("v26TargetRoom").value,racks=(st?.racks||[]).filter(r=>siteOf(r)===site&&roomOf(r)===room);$("v26TargetRack").innerHTML=racks.map(r=>`<option value="${esc(r.id)}">${esc(r.name)} · ${Number(r.units)||42}U</option>`).join("");if(racks.some(r=>r.id===preferred))$("v26TargetRack").value=preferred;}
+  function buildPlan(refs,targetRackId,side,manualU){const original=readState();if(!original)return{ok:false,error:"讀取資料失敗"};const next=clone(original),contexts=refs.map(r=>resolveRef(next,r));if(contexts.some(x=>!x))return{ok:false,error:"部分設備已不存在"};const moving=contexts.map(x=>({device:clone(x.d),sourceRack:x.rack}));contexts.forEach((x,i)=>{if(x.kind==="mounted")x.rack.devices=x.rack.devices.filter(d=>d.id!==refs[i].deviceId);else next.unassignedDevices=ensurePool(next).filter(d=>d.id!==refs[i].deviceId);});const target=next.racks.find(r=>r.id===targetRackId);if(!target)return{ok:false,error:"請選擇目標機櫃"};target.devices=Array.isArray(target.devices)?target.devices:[];const placements=[];for(const item of moving){const d=item.device;let u=null;if(d.installation!=="external"){if(moving.length===1&&manualU!==""&&manualU!=null){u=Number(manualU);if(!canPlace(target,d,u,side))return{ok:false,error:`${d.name} 無法放置在指定 U 位`,placements};}else{u=findFree(target,d,side);if(u==null)return{ok:false,error:`${d.name} 找不到足夠空間`,placements};}}d.side=d.installation==="external"?(d.side||"front"):side;d.u=d.installation==="external"?null:u;d.updatedAt=new Date().toISOString();delete d.unassignedAt;delete d.lastRack;target.devices.push(d);placements.push({name:d.name,u:d.installation==="external"?"周邊設備":uLabel(d)});}const now=new Date().toISOString();target.updatedAt=now;contexts.filter(x=>x.rack&&x.rack.id!==target.id).forEach(x=>{const r=next.racks.find(z=>z.id===x.rack.id);if(r)r.updatedAt=now;});next.activeRackId=target.id;if(moving.some(x=>x.device.installation!=="external"))next.activeFace=side;return{ok:true,next,target,placements};}
+  function refreshPlan(){const target=$("v26TargetRack")?.value;if(!target){$("v26Preview").innerHTML="<h4>配置預覽</h4><div class='bad'>此機房沒有可用機櫃</div>";$("v26MoveSubmit").disabled=true;return;}const manual=moveRefs.length===1?$("v26TargetU").value:"",plan=buildPlan(moveRefs,target,$("v26TargetSide").value,manual);planCache=plan;$("v26MoveSubmit").disabled=!plan.ok;$("v26Preview").innerHTML=`<h4>配置預覽</h4>${plan.placements?.map(p=>`<div class="v26-preview-row"><span>${esc(p.name)}</span><strong class="ok">${esc(p.u)}</strong></div>`).join("")||""}${plan.ok?`<div class="v26-preview-row"><span>檢查結果</span><strong class="ok">✓ 所有設備皆可放置</strong></div>`:`<div class="v26-preview-row"><span>檢查結果</span><strong class="bad">⚠ ${esc(plan.error||"無法配置")}</strong></div>`}`;}
+  function commitPlan(){refreshPlan();if(!planCache?.ok)return;const count=moveRefs.length,targetName=planCache.target.name;moveDialog.close();selected.clear();sync(planCache.next,count>1?`${count} 台設備已批次移動到 ${targetName}`:`設備已移動到 ${targetName}`,()=>{if(manager?.open){fillManagerFilters(true);renderManager();}});}
+  new MutationObserver(()=>installInspectorMove()).observe(document.body,{childList:true,subtree:true});
 })();
