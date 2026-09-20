@@ -61,6 +61,8 @@
   let roomFilter=null,typeFilter=null,statusFilter=null,tabs=null,tbodyObserver=null,postScheduled=false,popup=null;
 
   function installTop(){
+    document.title="Rack Manager｜機櫃管理工具 V2.5.1";
+    const brand=document.querySelector(".brand p");if(brand)brand.textContent="機櫃管理工具 V2.5.1";
     const overview=$("v24OverviewBtn");if(overview)overview.style.display="none";
     const dispatch=$("v25DispatchBtn");
     if(dispatch){dispatch.textContent="設備管理";dispatch.title="搜尋、篩選、定位、移動、上架與管理設備";}
