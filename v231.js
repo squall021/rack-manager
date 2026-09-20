@@ -66,7 +66,7 @@
       const siteName = norm(site?.name);
       if (selectedSite && siteName !== selectedSite) return;
       (site?.rooms || []).forEach(room => {
-        const name = norm(room);
+        const name = norm(typeof room === "string" ? room : room?.name || room?.roomName || room?.label);
         if (name) names.add(name);
       });
     });
@@ -122,11 +122,18 @@
   });
 })();
 
-// V2.5.1 UI integration layer. Load after all page scripts so V2.4/V2.5 controls exist.
+// Compatibility loaders. Direct page scripts may already load V2.6; guards prevent duplicates.
 window.addEventListener("load", () => {
-  if (document.querySelector('script[data-v251-loader]')) return;
-  const script = document.createElement("script");
-  script.src = "v251.js?v=2.5.1";
-  script.dataset.v251Loader = "1";
-  document.body.appendChild(script);
+  if (!document.querySelector('script[data-v251-loader]')) {
+    const script = document.createElement("script");
+    script.src = "v251.js?v=2.6";
+    script.dataset.v251Loader = "1";
+    document.body.appendChild(script);
+  }
+  if (!document.querySelector('script[data-v261-loader]')) {
+    const fix = document.createElement("script");
+    fix.src = "v261.js?v=2.6.1";
+    fix.dataset.v261Loader = "1";
+    document.body.appendChild(fix);
+  }
 }, { once:true });
