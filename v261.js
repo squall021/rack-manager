@@ -1,7 +1,7 @@
 (() => {
   "use strict";
-  if (window.__rackManagerV261Loaded) return;
-  window.__rackManagerV261Loaded = true;
+  if (window.__rackManagerV262Loaded) return;
+  window.__rackManagerV262Loaded = true;
 
   const STORAGE_KEY = "rack-manager-v1-state";
   const DEFAULT_SITE = "未分類據點";
@@ -62,13 +62,17 @@
     return pairs;
   }
 
+  function siteHasRack(state, site) {
+    return !!site && (state?.racks || []).some(rack => siteOf(rack) === site);
+  }
+
   function setOptions(select, values, firstLabel, preferred="") {
     if (!select) return "";
     const options = [];
     if (firstLabel != null) options.push({value:"", label:firstLabel});
     values.forEach(value => options.push({value, label:value}));
     const signature = options.map(o=>`${o.value}\u241e${o.label}`).join("\u241d");
-    if (select.dataset.v261Options !== signature) {
+    if (select.dataset.v262Options !== signature) {
       select.innerHTML = "";
       options.forEach(({value,label}) => {
         const option = document.createElement("option");
@@ -76,14 +80,18 @@
         option.textContent = label;
         select.appendChild(option);
       });
-      select.dataset.v261Options = signature;
+      select.dataset.v262Options = signature;
     }
     const wanted = options.some(o=>o.value===preferred) ? preferred : (options[0]?.value || "");
     if (select.value !== wanted) select.value = wanted;
     return wanted;
   }
 
+  let pinnedHierarchySite = "";
+  let pinnedHierarchyRoom = "";
+  let pinnedManagerSite = "";
   let hierarchyPatching = false;
+
   function patchHierarchy({preserve=true}={}) {
     if (hierarchyPatching) return;
     const state = readState();
@@ -92,16 +100,22 @@
     if (!state || !siteSelect || !roomSelect) return;
     hierarchyPatching = true;
     try {
-      const active = (state.racks || []).find(r=>r.id===state.activeRackId) || state.racks?.[0] || null;
       const sites = allSites(state);
+      if (pinnedHierarchySite && !sites.includes(pinnedHierarchySite)) {
+        pinnedHierarchySite = "";
+        pinnedHierarchyRoom = "";
+      }
+
+      const active = (state.racks || []).find(r=>r.id===state.activeRackId) || state.racks?.[0] || null;
       const oldSite = preserve ? siteSelect.value : "";
-      const preferredSite = sites.includes(oldSite) ? oldSite : (active ? siteOf(active) : sites[0] || "");
+      const preferredSite = pinnedHierarchySite || (sites.includes(oldSite) ? oldSite : (active ? siteOf(active) : sites[0] || ""));
       setOptions(siteSelect, sites, null, preferredSite);
 
       const rooms = allRooms(state, siteSelect.value);
+      if (pinnedHierarchyRoom && !rooms.includes(pinnedHierarchyRoom)) pinnedHierarchyRoom = "";
       const oldRoom = preserve ? roomSelect.value : "";
       const activeRoom = active && siteOf(active)===siteSelect.value ? roomOf(active) : "";
-      const preferredRoom = rooms.includes(oldRoom) ? oldRoom : (rooms.includes(activeRoom) ? activeRoom : rooms[0] || "");
+      const preferredRoom = pinnedHierarchyRoom || (rooms.includes(oldRoom) ? oldRoom : (rooms.includes(activeRoom) ? activeRoom : rooms[0] || ""));
       setOptions(roomSelect, rooms, null, preferredRoom);
     } finally {
       hierarchyPatching = false;
@@ -118,9 +132,11 @@
     if (!state || !manager || !siteSelect || !roomSelect) return;
     managerPatching = true;
     try {
-      const oldSite = siteSelect.value;
       const sites = allSites(state);
-      setOptions(siteSelect, sites, "全部據點", sites.includes(oldSite) ? oldSite : "");
+      if (pinnedManagerSite && !sites.includes(pinnedManagerSite)) pinnedManagerSite = "";
+      const oldSite = siteSelect.value;
+      const preferredSite = pinnedManagerSite || (sites.includes(oldSite) ? oldSite : "");
+      setOptions(siteSelect, sites, "全部據點", preferredSite);
 
       const oldRoom = roomSelect.value;
       const rooms = allRooms(state, siteSelect.value);
@@ -129,58 +145,106 @@
       const summary = $("v26Summary");
       if (summary) {
         const cards = summary.querySelectorAll(".v26-card strong");
-        const siteCount = sites.length;
-        const roomCount = roomPairs(state).size;
-        if (cards[0] && cards[0].textContent !== String(siteCount)) cards[0].textContent = String(siteCount);
-        if (cards[1] && cards[1].textContent !== String(roomCount)) cards[1].textContent = String(roomCount);
+        if (cards[0] && cards[0].textContent !== String(sites.length)) cards[0].textContent = String(sites.length);
+        if (cards[1] && cards[1].textContent !== String(roomPairs(state).size)) cards[1].textContent = String(roomPairs(state).size);
       }
     } finally {
       managerPatching = false;
     }
   }
 
+  function rerenderManagerWithoutRebuildingFilters() {
+    const search = $("v26Search");
+    if (search) search.dispatchEvent(new Event("input", {bubbles:true}));
+  }
+
   function updateVersion() {
-    document.title = "Rack Manager｜機櫃管理工具 V2.6.1";
+    document.title = "Rack Manager｜機櫃管理工具 V2.6.2";
     const brand = document.querySelector(".brand p");
-    if (brand) brand.textContent = "機櫃管理工具 V2.6.1";
+    if (brand) brand.textContent = "機櫃管理工具 V2.6.2";
     const badge = document.querySelector("#v2Hierarchy .v231-version-badge") || document.querySelector("#v2Hierarchy .badge");
-    if (badge) badge.textContent = "V2.6.1";
+    if (badge) badge.textContent = "V2.6.2";
   }
 
   function attachManagerObservers() {
     const manager = $("v26Manager");
-    if (!manager || manager.dataset.v261Observed) return;
-    manager.dataset.v261Observed = "1";
-
-    const siteSelect = $("v26Site");
-    siteSelect?.addEventListener("change", () => setTimeout(patchManagerFilters, 0));
+    if (!manager || manager.dataset.v262Observed) return;
+    manager.dataset.v262Observed = "1";
 
     const summary = $("v26Summary");
     if (summary) {
       new MutationObserver(() => setTimeout(patchManagerFilters, 0)).observe(summary,{childList:true,subtree:true,characterData:true});
     }
 
+    const siteSelect = $("v26Site");
     if (siteSelect) {
       new MutationObserver(() => setTimeout(patchManagerFilters, 0)).observe(siteSelect,{childList:true});
     }
   }
 
+  // Capture empty-directory site changes before legacy V2/V2.6 handlers rebuild
+  // their options only from racks and therefore discard the selected site.
   document.addEventListener("change", event => {
-    if (event.target?.id === "v2SiteSelect") setTimeout(()=>patchHierarchy({preserve:true}),0);
-    if (event.target?.id === "v26Site") setTimeout(patchManagerFilters,0);
-  });
+    const id = event.target?.id;
+    if (!id) return;
+    const state = readState();
+    if (!state) return;
+
+    if (id === "v2SiteSelect") {
+      const requested = norm(event.target.value);
+      if (requested && !siteHasRack(state, requested)) {
+        pinnedHierarchySite = requested;
+        const rooms = allRooms(state, requested);
+        pinnedHierarchyRoom = rooms.includes($("v2RoomSelect")?.value) ? $("v2RoomSelect").value : (rooms[0] || "");
+        event.stopPropagation();
+        setTimeout(()=>patchHierarchy({preserve:true}),0);
+        return;
+      }
+      pinnedHierarchySite = "";
+      pinnedHierarchyRoom = "";
+      setTimeout(()=>patchHierarchy({preserve:true}),0);
+      return;
+    }
+
+    if (id === "v2RoomSelect" && pinnedHierarchySite) {
+      pinnedHierarchyRoom = norm(event.target.value);
+      event.stopPropagation();
+      setTimeout(()=>patchHierarchy({preserve:true}),0);
+      return;
+    }
+
+    if (id === "v26Site") {
+      const requested = norm(event.target.value);
+      if (requested && !siteHasRack(state, requested)) {
+        pinnedManagerSite = requested;
+        event.stopPropagation();
+        setTimeout(()=>{
+          patchManagerFilters();
+          rerenderManagerWithoutRebuildingFilters();
+          setTimeout(patchManagerFilters,0);
+        },0);
+        return;
+      }
+      pinnedManagerSite = "";
+      setTimeout(patchManagerFilters,0);
+    }
+  }, true);
 
   document.addEventListener("click", event => {
     if (event.target.closest?.("#v26ManageBtn")) {
       setTimeout(() => { attachManagerObservers(); patchManagerFilters(); }, 40);
     }
     if (event.target.closest?.("#v23ManageLocations")) {
-      setTimeout(patchHierarchy, 80);
+      setTimeout(()=>patchHierarchy({preserve:true}),80);
     }
   });
 
   const rackSelect = $("rackSelect");
-  rackSelect?.addEventListener("change", () => setTimeout(()=>patchHierarchy({preserve:false}),90));
+  rackSelect?.addEventListener("change", () => {
+    pinnedHierarchySite = "";
+    pinnedHierarchyRoom = "";
+    setTimeout(()=>patchHierarchy({preserve:false}),90);
+  });
 
   const rackMeta = $("rackMeta");
   if (rackMeta) {
