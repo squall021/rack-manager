@@ -132,14 +132,20 @@ window.addEventListener("load", () => {
   }
   if (!document.querySelector('script[data-v261-loader]')) {
     const fix = document.createElement("script");
-    fix.src = "v261.js?v=2.6.3";
+    fix.src = "v261.js?v=2.6.5";
     fix.dataset.v261Loader = "1";
     document.body.appendChild(fix);
   }
   if (!document.querySelector('script[data-v264-loader]')) {
     const moveFix = document.createElement("script");
-    moveFix.src = "v264.js?v=2.6.4";
+    moveFix.src = "v264.js?v=2.6.5";
     moveFix.dataset.v264Loader = "1";
     document.body.appendChild(moveFix);
+  }
+  if (!document.querySelector('script[data-v265-loader]')) {
+    const emptyFix = document.createElement("script");
+    emptyFix.src = "v265.js?v=2.6.5";
+    emptyFix.dataset.v265Loader = "1";
+    document.body.appendChild(emptyFix);
   }
 }, { once:true });
