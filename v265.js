@@ -134,3 +134,10 @@
   [0,150,600,1500].forEach(ms => setTimeout(updateVersion, ms));
   setTimeout(refresh, 80);
 })();
+
+if (!document.querySelector('script[data-v266-loader]')) {
+  const script = document.createElement("script");
+  script.src = "v266.js?v=2.6.6";
+  script.dataset.v266Loader = "1";
+  document.body.appendChild(script);
+}
