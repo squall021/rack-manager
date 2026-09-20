@@ -1,5 +1,7 @@
 (() => {
   "use strict";
+  if (window.__rackManagerV251Loaded) return;
+  window.__rackManagerV251Loaded = true;
 
   const STORAGE_KEY = "rack-manager-v1-state";
   const DEFAULT_SITE = "未分類據點";
@@ -18,6 +20,7 @@
   style.textContent=`
     #v24OverviewBtn{display:none!important}
     #v25DispatchBtn{white-space:nowrap}
+    #v25Dispatch.v251-ready{overflow:visible}
     #v25Dispatch.v251-ready .v25-summary{grid-template-columns:repeat(6,minmax(0,1fr))}
     #v25Dispatch.v251-ready .v25-toolbar{grid-template-columns:minmax(220px,2fr) repeat(4,minmax(115px,1fr)) auto}
     #v25Dispatch.v251-ready #v25Kind{display:none}
@@ -25,9 +28,9 @@
     .v251-tab{border:1px solid #dbe3ed;background:#fff;color:#526176;border-radius:999px;padding:6px 11px;font-size:10px;font-weight:800;cursor:pointer}
     .v251-tab.active{background:#0f172a;border-color:#0f172a;color:#fff}
     .v251-tab span{opacity:.72;margin-left:4px}
-    .v251-menu-trigger{width:30px;height:28px;border:1px solid #dbe3ed;background:#fff;border-radius:7px;color:#475569;font-weight:900;cursor:pointer;font-size:15px;line-height:1}
+    .v251-menu-trigger{width:30px;height:28px;border:1px solid #dbe3ed;background:#fff;border-radius:7px;color:#475569;font-weight:900;cursor:pointer;font-size:15px;line-height:1;position:relative;z-index:2}
     .v251-menu-trigger:hover{border-color:#93c5fd;color:#2563eb}
-    .v251-action-popup{position:fixed;z-index:30000;min-width:150px;background:#fff;border:1px solid #dbe3ed;border-radius:10px;box-shadow:0 16px 44px rgba(15,23,42,.24);padding:5px;display:grid;gap:2px}
+    .v251-action-popup{position:fixed;z-index:2147483646;min-width:150px;background:#fff;border:1px solid #dbe3ed;border-radius:10px;box-shadow:0 16px 44px rgba(15,23,42,.28);padding:5px;display:grid;gap:2px}
     .v251-action-popup button{border:0;background:transparent;border-radius:7px;padding:8px 9px;text-align:left;font-size:10px;color:#334155;cursor:pointer;white-space:nowrap}
     .v251-action-popup button:hover{background:#f1f5f9}.v251-action-popup button.danger{color:#b91c1c}
     .v251-zero-note{color:#94a3b8}
@@ -61,17 +64,17 @@
   let roomFilter=null,typeFilter=null,statusFilter=null,tabs=null,tbodyObserver=null,postScheduled=false,popup=null;
 
   function installTop(){
-    document.title="Rack Manager｜機櫃管理工具 V2.5.1";
-    const brand=document.querySelector(".brand p");if(brand)brand.textContent="機櫃管理工具 V2.5.1";
+    document.title="Rack Manager｜機櫃管理工具 V2.5.2";
+    const brand=document.querySelector(".brand p");if(brand)brand.textContent="機櫃管理工具 V2.5.2";
     const overview=$("v24OverviewBtn");if(overview)overview.style.display="none";
     const dispatch=$("v25DispatchBtn");
     if(dispatch){dispatch.textContent="設備管理";dispatch.title="搜尋、篩選、定位、移動、上架與管理設備";}
     const badge=document.querySelector("#v2Hierarchy .v231-version-badge")||document.querySelector("#v2Hierarchy .badge");
-    if(badge)badge.textContent="V2.5.1";
+    if(badge)badge.textContent="V2.5.2";
   }
 
   function buildTabs(dialog){
-    if($("v251Tabs"))return;
+    if($("v251Tabs")){tabs=$("v251Tabs");return;}
     tabs=document.createElement("div");tabs.id="v251Tabs";tabs.className="v251-tabs";
     tabs.innerHTML=`<button class="v251-tab active" data-kind="">全部設備 <span>0</span></button><button class="v251-tab" data-kind="mounted">已上架 <span>0</span></button><button class="v251-tab" data-kind="unassigned">未上架 <span>0</span></button>`;
     const toolbar=dialog.querySelector(".v25-toolbar");toolbar?.before(tabs);
@@ -86,7 +89,8 @@
   }
 
   function buildExtraFilters(dialog){
-    const toolbar=dialog.querySelector(".v25-toolbar");if(!toolbar||$("v251Room"))return;
+    const toolbar=dialog.querySelector(".v25-toolbar");if(!toolbar)return;
+    if($("v251Room")){roomFilter=$("v251Room");typeFilter=$("v251Type");statusFilter=$("v251Status");return;}
     toolbar.classList.add("v251-toolbar");
     roomFilter=document.createElement("select");roomFilter.className="field";roomFilter.id="v251Room";
     typeFilter=document.createElement("select");typeFilter.className="field";typeFilter.id="v251Type";
@@ -143,13 +147,30 @@
 
   function closePopup(){popup?.remove();popup=null;}
   function openPopup(trigger,originals){
-    closePopup();popup=document.createElement("div");popup.className="v251-action-popup";
-    originals.forEach(original=>{const b=document.createElement("button");b.type="button";b.textContent=norm(original.textContent)||"操作";if(original.classList.contains("danger")||original.classList.contains("unmount"))b.classList.add("danger");b.onclick=()=>{closePopup();original.click();};popup.appendChild(b);});
-    document.body.appendChild(popup);const r=trigger.getBoundingClientRect(),pr=popup.getBoundingClientRect();let left=Math.max(8,Math.min(window.innerWidth-pr.width-8,r.right-pr.width)),top=r.bottom+5;if(top+pr.height>window.innerHeight-8)top=Math.max(8,r.top-pr.height-5);popup.style.left=`${left}px`;popup.style.top=`${top}px`;
+    closePopup();
+    const dialog=$("v25Dispatch");if(!dialog)return;
+    popup=document.createElement("div");popup.className="v251-action-popup";
+    originals.forEach(original=>{
+      const b=document.createElement("button");b.type="button";b.textContent=norm(original.textContent)||"操作";
+      if(original.classList.contains("danger")||original.classList.contains("unmount"))b.classList.add("danger");
+      b.onclick=e=>{e.stopPropagation();closePopup();original.click();};
+      popup.appendChild(b);
+    });
+    dialog.appendChild(popup);
+    const r=trigger.getBoundingClientRect(),pr=popup.getBoundingClientRect();
+    let left=Math.max(8,Math.min(window.innerWidth-pr.width-8,r.right-pr.width));
+    let top=r.bottom+5;
+    if(top+pr.height>window.innerHeight-8)top=Math.max(8,r.top-pr.height-5);
+    popup.style.left=`${left}px`;popup.style.top=`${top}px`;
   }
   function enhanceMenus(){
     $("v25Body")?.querySelectorAll(".v25-actions").forEach(actions=>{
-      if(actions.dataset.v251)return;const originals=[...actions.querySelectorAll(":scope > button")];if(!originals.length)return;actions.dataset.v251="1";originals.forEach(b=>b.style.display="none");const more=document.createElement("button");more.type="button";more.className="v251-menu-trigger";more.textContent="⋯";more.title="設備操作";more.onclick=e=>{e.stopPropagation();openPopup(more,originals);};actions.appendChild(more);
+      if(actions.dataset.v251)return;
+      const originals=[...actions.querySelectorAll(":scope > button")];if(!originals.length)return;
+      actions.dataset.v251="1";originals.forEach(b=>b.style.display="none");
+      const more=document.createElement("button");more.type="button";more.className="v251-menu-trigger";more.textContent="⋯";more.title="設備操作";
+      more.onclick=e=>{e.preventDefault();e.stopPropagation();openPopup(more,originals);};
+      actions.appendChild(more);
     });
   }
 
@@ -161,6 +182,7 @@
     const kicker=dialog.querySelector(".v25-kicker"),title=dialog.querySelector(".v25-head h2");if(kicker)kicker.textContent="DEVICE MANAGEMENT";if(title)title.textContent="設備管理";
     buildTabs(dialog);buildExtraFilters(dialog);fillFilterOptions(true);updateTabs();
     const body=$("v25Body");if(body&&!tbodyObserver){tbodyObserver=new MutationObserver(schedulePostProcess);tbodyObserver.observe(body,{childList:true,subtree:true});}
+    if(!dialog.dataset.v252CloseHook){dialog.dataset.v252CloseHook="1";dialog.addEventListener("close",closePopup);}
     schedulePostProcess();
   }
 
