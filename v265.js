@@ -108,11 +108,11 @@
   }
 
   function updateVersion() {
-    document.title = "Rack Manager｜機櫃管理工具 V2.6.5";
+    document.title = "Rack Manager｜機櫃管理工具 V2.6.6";
     const brand = document.querySelector(".brand p");
-    if (brand) brand.textContent = "機櫃管理工具 V2.6.5";
+    if (brand) brand.textContent = "機櫃管理工具 V2.6.6";
     const badge = document.querySelector("#v2Hierarchy .v231-version-badge") || document.querySelector("#v2Hierarchy .badge");
-    if (badge) badge.textContent = "V2.6.5";
+    if (badge) badge.textContent = "V2.6.6";
   }
 
   document.addEventListener("change", event => {
