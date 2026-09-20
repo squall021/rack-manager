@@ -136,4 +136,10 @@ window.addEventListener("load", () => {
     fix.dataset.v261Loader = "1";
     document.body.appendChild(fix);
   }
+  if (!document.querySelector('script[data-v264-loader]')) {
+    const moveFix = document.createElement("script");
+    moveFix.src = "v264.js?v=2.6.4";
+    moveFix.dataset.v264Loader = "1";
+    document.body.appendChild(moveFix);
+  }
 }, { once:true });
