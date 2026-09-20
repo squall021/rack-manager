@@ -107,6 +107,14 @@
     }
   }
 
+  function updateVersion() {
+    document.title = "Rack Manager｜機櫃管理工具 V2.6.5";
+    const brand = document.querySelector(".brand p");
+    if (brand) brand.textContent = "機櫃管理工具 V2.6.5";
+    const badge = document.querySelector("#v2Hierarchy .v231-version-badge") || document.querySelector("#v2Hierarchy .badge");
+    if (badge) badge.textContent = "V2.6.5";
+  }
+
   document.addEventListener("change", event => {
     if (event.target?.id === "v2SiteSelect" || event.target?.id === "v2RoomSelect") {
       setTimeout(refresh, 0);
@@ -123,5 +131,6 @@
   });
 
   new MutationObserver(() => setTimeout(refresh, 0)).observe(document.body, {childList:true, subtree:false});
+  [0,150,600,1500].forEach(ms => setTimeout(updateVersion, ms));
   setTimeout(refresh, 80);
 })();
