@@ -132,7 +132,7 @@ window.addEventListener("load", () => {
   }
   if (!document.querySelector('script[data-v261-loader]')) {
     const fix = document.createElement("script");
-    fix.src = "v261.js?v=2.6.2";
+    fix.src = "v261.js?v=2.6.3";
     fix.dataset.v261Loader = "1";
     document.body.appendChild(fix);
   }
