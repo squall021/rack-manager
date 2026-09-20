@@ -1,260 +1,220 @@
 (() => {
   "use strict";
-  if (window.__rackManagerV262Loaded) return;
-  window.__rackManagerV262Loaded = true;
+  if (window.__rackManagerV263Loaded) return;
+  window.__rackManagerV263Loaded = true;
 
   const STORAGE_KEY = "rack-manager-v1-state";
   const DEFAULT_SITE = "未分類據點";
   const DEFAULT_ROOM = "未分類機房";
   const $ = id => document.getElementById(id);
-  const norm = value => String(value ?? "").trim();
+  const norm = v => String(v ?? "").trim();
   const siteOf = rack => norm(rack?.siteName) || DEFAULT_SITE;
   const roomOf = rack => norm(rack?.roomName) || norm(rack?.location) || DEFAULT_ROOM;
 
-  function readState() {
+  function readState(){
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); }
     catch { return null; }
   }
-
-  function roomName(room) {
-    if (typeof room === "string") return norm(room);
-    return norm(room?.name || room?.roomName || room?.label);
+  function roomName(room){
+    return typeof room === "string" ? norm(room) : norm(room?.name || room?.roomName || room?.label);
   }
-
-  function allSites(state) {
-    const names = new Set();
-    (state?.locationDirectory?.sites || []).forEach(site => {
-      const name = norm(site?.name);
-      if (name) names.add(name);
-    });
-    (state?.racks || []).forEach(rack => names.add(siteOf(rack)));
+  function allSites(state){
+    const names=new Set();
+    (state?.locationDirectory?.sites||[]).forEach(s=>{ const n=norm(s?.name); if(n) names.add(n); });
+    (state?.racks||[]).forEach(r=>names.add(siteOf(r)));
     return [...names].filter(Boolean).sort((a,b)=>a.localeCompare(b,"zh-Hant"));
   }
-
-  function allRooms(state, selectedSite="") {
-    const names = new Set();
-    (state?.locationDirectory?.sites || []).forEach(site => {
-      const siteName = norm(site?.name);
-      if (selectedSite && siteName !== selectedSite) return;
-      (site?.rooms || []).forEach(room => {
-        const name = roomName(room);
-        if (name) names.add(name);
-      });
+  function allRooms(state,site=""){
+    const names=new Set();
+    (state?.locationDirectory?.sites||[]).forEach(s=>{
+      const sn=norm(s?.name); if(site && sn!==site) return;
+      (s?.rooms||[]).forEach(r=>{ const n=roomName(r); if(n) names.add(n); });
     });
-    (state?.racks || []).forEach(rack => {
-      if (selectedSite && siteOf(rack) !== selectedSite) return;
-      names.add(roomOf(rack));
-    });
+    (state?.racks||[]).forEach(r=>{ if(!site || siteOf(r)===site) names.add(roomOf(r)); });
     return [...names].filter(Boolean).sort((a,b)=>a.localeCompare(b,"zh-Hant"));
   }
-
-  function roomPairs(state) {
-    const pairs = new Set();
-    (state?.locationDirectory?.sites || []).forEach(site => {
-      const siteName = norm(site?.name);
-      if (!siteName) return;
-      (site?.rooms || []).forEach(room => {
-        const name = roomName(room);
-        if (name) pairs.add(`${siteName}\u241f${name}`);
-      });
-    });
-    (state?.racks || []).forEach(rack => pairs.add(`${siteOf(rack)}\u241f${roomOf(rack)}`));
+  function roomPairs(state){
+    const pairs=new Set();
+    allSites(state).forEach(site=>allRooms(state,site).forEach(room=>pairs.add(`${site}\u241f${room}`)));
     return pairs;
   }
-
-  function siteHasRack(state, site) {
-    return !!site && (state?.racks || []).some(rack => siteOf(rack) === site);
-  }
-
-  function setOptions(select, values, firstLabel, preferred="") {
-    if (!select) return "";
-    const options = [];
-    if (firstLabel != null) options.push({value:"", label:firstLabel});
-    values.forEach(value => options.push({value, label:value}));
-    const signature = options.map(o=>`${o.value}\u241e${o.label}`).join("\u241d");
-    if (select.dataset.v262Options !== signature) {
-      select.innerHTML = "";
-      options.forEach(({value,label}) => {
-        const option = document.createElement("option");
-        option.value = value;
-        option.textContent = label;
-        select.appendChild(option);
-      });
-      select.dataset.v262Options = signature;
+  function fillOptions(select,values,placeholder=null,preferred=""){
+    if(!select) return "";
+    const items=[];
+    if(placeholder!==null) items.push({value:"",label:placeholder});
+    values.forEach(v=>items.push({value:v,label:v}));
+    const sig=items.map(x=>`${x.value}\u241e${x.label}`).join("\u241d");
+    if(select.dataset.v263Options!==sig){
+      select.innerHTML="";
+      items.forEach(x=>{ const o=document.createElement("option"); o.value=x.value; o.textContent=x.label; select.appendChild(o); });
+      select.dataset.v263Options=sig;
     }
-    const wanted = options.some(o=>o.value===preferred) ? preferred : (options[0]?.value || "");
-    if (select.value !== wanted) select.value = wanted;
+    const wanted=items.some(x=>x.value===preferred)?preferred:(items[0]?.value||"");
+    if(select.value!==wanted) select.value=wanted;
     return wanted;
   }
+  function activeRack(state){
+    return state?.racks?.find(r=>r.id===state.activeRackId) || state?.racks?.[0] || null;
+  }
+  function setVersion(){
+    document.title="Rack Manager｜機櫃管理工具 V2.6.3";
+    const brand=document.querySelector(".brand p"); if(brand) brand.textContent="機櫃管理工具 V2.6.3";
+    const badge=document.querySelector("#v2Hierarchy .v231-version-badge")||document.querySelector("#v2Hierarchy .badge");
+    if(badge) badge.textContent="V2.6.3";
+  }
 
-  let pinnedHierarchySite = "";
-  let pinnedHierarchyRoom = "";
-  let pinnedManagerSite = "";
-  let hierarchyPatching = false;
-
-  function patchHierarchy({preserve=true}={}) {
-    if (hierarchyPatching) return;
-    const state = readState();
-    const siteSelect = $("v2SiteSelect");
-    const roomSelect = $("v2RoomSelect");
-    if (!state || !siteSelect || !roomSelect) return;
-    hierarchyPatching = true;
-    try {
-      const sites = allSites(state);
-      if (pinnedHierarchySite && !sites.includes(pinnedHierarchySite)) {
-        pinnedHierarchySite = "";
-        pinnedHierarchyRoom = "";
-      }
-
-      const active = (state.racks || []).find(r=>r.id===state.activeRackId) || state.racks?.[0] || null;
-      const oldSite = preserve ? siteSelect.value : "";
-      const preferredSite = pinnedHierarchySite || (sites.includes(oldSite) ? oldSite : (active ? siteOf(active) : sites[0] || ""));
-      setOptions(siteSelect, sites, null, preferredSite);
-
-      const rooms = allRooms(state, siteSelect.value);
-      if (pinnedHierarchyRoom && !rooms.includes(pinnedHierarchyRoom)) pinnedHierarchyRoom = "";
-      const oldRoom = preserve ? roomSelect.value : "";
-      const activeRoom = active && siteOf(active)===siteSelect.value ? roomOf(active) : "";
-      const preferredRoom = pinnedHierarchyRoom || (rooms.includes(oldRoom) ? oldRoom : (rooms.includes(activeRoom) ? activeRoom : rooms[0] || ""));
-      setOptions(roomSelect, rooms, null, preferredRoom);
-    } finally {
-      hierarchyPatching = false;
+  // ---- Left hierarchy: replace legacy selects so the old V2 listeners can no longer
+  // rebuild them from racks only. The new controls use locationDirectory + racks.
+  let hSite=null,hRoom=null;
+  function cloneSelect(id){
+    const old=$(id); if(!old) return null;
+    if(old.dataset.v263Native==="1") return old;
+    const fresh=old.cloneNode(true);
+    fresh.dataset.v263Native="1";
+    old.replaceWith(fresh);
+    return fresh;
+  }
+  function updateEmptyHint(site,room){
+    const state=readState(); if(!state) return;
+    const hasRack=(state.racks||[]).some(r=>siteOf(r)===site && (!room || roomOf(r)===room));
+    let note=$("v263EmptyLocationNote");
+    if(hasRack || !site){ note?.remove(); return; }
+    if(!note){
+      note=document.createElement("div"); note.id="v263EmptyLocationNote";
+      note.style.cssText="margin-top:7px;padding:7px 9px;border:1px solid #dbe3ed;border-radius:8px;background:#fff;font-size:10px;color:#64748b;line-height:1.45";
+      $("v2Hierarchy")?.querySelector(".v2-hierarchy-grid")?.after(note);
+    }
+    note.textContent=`${site}${room?` / ${room}`:""} 目前尚無機櫃，可直接按「＋ 新增機櫃」建立。`;
+    const crumb=$("v2Breadcrumb");
+    if(crumb) crumb.innerHTML=`<b>${escapeHtml(site)}</b>${room?`<span>›</span><b>${escapeHtml(room)}</b>`:""}<span>›</span><span>尚無機櫃</span>`;
+  }
+  function escapeHtml(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c])); }
+  function fillHierarchy(preferSite="",preferRoom=""){
+    const state=readState(); if(!state||!hSite||!hRoom) return;
+    const rack=activeRack(state),sites=allSites(state);
+    const site=sites.includes(preferSite)?preferSite:(rack&&sites.includes(siteOf(rack))?siteOf(rack):(sites[0]||""));
+    fillOptions(hSite,sites,null,site);
+    const rooms=allRooms(state,hSite.value);
+    const room=rooms.includes(preferRoom)?preferRoom:(rack&&siteOf(rack)===hSite.value&&rooms.includes(roomOf(rack))?roomOf(rack):(rooms[0]||""));
+    fillOptions(hRoom,rooms,null,room);
+    updateEmptyHint(hSite.value,hRoom.value);
+  }
+  function selectRackIfAvailable(){
+    const state=readState(); if(!state||!hSite||!hRoom) return;
+    const target=(state.racks||[]).find(r=>siteOf(r)===hSite.value && roomOf(r)===hRoom.value);
+    if(!target){ updateEmptyHint(hSite.value,hRoom.value); return; }
+    $("v263EmptyLocationNote")?.remove();
+    const rackSelect=$("rackSelect");
+    if(rackSelect && rackSelect.value!==target.id){
+      rackSelect.value=target.id;
+      rackSelect.dispatchEvent(new Event("change",{bubbles:true}));
     }
   }
-
-  let managerPatching = false;
-  function patchManagerFilters() {
-    if (managerPatching) return;
-    const state = readState();
-    const manager = $("v26Manager");
-    const siteSelect = $("v26Site");
-    const roomSelect = $("v26Room");
-    if (!state || !manager || !siteSelect || !roomSelect) return;
-    managerPatching = true;
-    try {
-      const sites = allSites(state);
-      if (pinnedManagerSite && !sites.includes(pinnedManagerSite)) pinnedManagerSite = "";
-      const oldSite = siteSelect.value;
-      const preferredSite = pinnedManagerSite || (sites.includes(oldSite) ? oldSite : "");
-      setOptions(siteSelect, sites, "全部據點", preferredSite);
-
-      const oldRoom = roomSelect.value;
-      const rooms = allRooms(state, siteSelect.value);
-      setOptions(roomSelect, rooms, "全部機房", rooms.includes(oldRoom) ? oldRoom : "");
-
-      const summary = $("v26Summary");
-      if (summary) {
-        const cards = summary.querySelectorAll(".v26-card strong");
-        if (cards[0] && cards[0].textContent !== String(sites.length)) cards[0].textContent = String(sites.length);
-        if (cards[1] && cards[1].textContent !== String(roomPairs(state).size)) cards[1].textContent = String(roomPairs(state).size);
-      }
-    } finally {
-      managerPatching = false;
-    }
+  function installHierarchy(){
+    const oldSite=$("v2SiteSelect"),oldRoom=$("v2RoomSelect"); if(!oldSite||!oldRoom) return;
+    const oldSiteValue=oldSite.value,oldRoomValue=oldRoom.value;
+    hSite=cloneSelect("v2SiteSelect"); hRoom=cloneSelect("v2RoomSelect");
+    fillHierarchy(oldSiteValue,oldRoomValue);
+    hSite.addEventListener("change",()=>{
+      const state=readState(); if(!state) return;
+      const rooms=allRooms(state,hSite.value);
+      fillOptions(hRoom,rooms,null,rooms[0]||"");
+      selectRackIfAvailable();
+    });
+    hRoom.addEventListener("change",selectRackIfAvailable);
+    $("rackSelect")?.addEventListener("change",()=>{
+      setTimeout(()=>{
+        const state=readState(),rack=activeRack(state); if(!rack) return;
+        fillHierarchy(siteOf(rack),roomOf(rack));
+      },30);
+    });
+  }
+  function refreshHierarchyPreserving(){
+    if(!hSite||!hRoom) return;
+    fillHierarchy(hSite.value,hRoom.value);
   }
 
-  function rerenderManagerWithoutRebuildingFilters() {
-    const search = $("v26Search");
-    if (search) search.dispatchEvent(new Event("input", {bubbles:true}));
+  // ---- Device manager: keep the original V2.6 controls (its closures depend on
+  // them), but intercept selection of a directory-only site before V2.6 clears it.
+  let managerWantedSite="",managerWantedRoom="",managerObserver=null;
+  function patchManagerOptions(){
+    const state=readState(),siteSel=$("v26Site"),roomSel=$("v26Room");
+    if(!state||!siteSel||!roomSel) return;
+    const sites=allSites(state);
+    const desiredSite=sites.includes(managerWantedSite)?managerWantedSite:(sites.includes(siteSel.value)?siteSel.value:"");
+    fillOptions(siteSel,sites,"全部據點",desiredSite);
+    managerWantedSite=siteSel.value;
+    const rooms=allRooms(state,siteSel.value);
+    const desiredRoom=rooms.includes(managerWantedRoom)?managerWantedRoom:(rooms.includes(roomSel.value)?roomSel.value:"");
+    fillOptions(roomSel,rooms,"全部機房",desiredRoom);
+    managerWantedRoom=roomSel.value;
+    patchManagerSummary();
+    attachManagerObserver();
+  }
+  function patchManagerSummary(){
+    const state=readState(),summary=$("v26Summary"); if(!state||!summary) return;
+    const nums=summary.querySelectorAll(".v26-card strong");
+    if(nums[0]) nums[0].textContent=String(allSites(state).length);
+    if(nums[1]) nums[1].textContent=String(roomPairs(state).size);
+  }
+  function renderEmptyManagerSite(){
+    const state=readState(); if(!state) return;
+    const all=(state.racks||[]).reduce((n,r)=>n+(r.devices||[]).length,0)+(Array.isArray(state.unassignedDevices)?state.unassignedDevices.length:0);
+    const body=$("v26Body"),count=$("v26Count");
+    if(body) body.innerHTML='<tr><td colspan="7"><div class="v26-empty">此據點目前沒有設備</div></td></tr>';
+    if(count) count.textContent=`顯示 0 / ${all} 台設備`;
+    const selectAll=$("v26SelectAll"); if(selectAll){ selectAll.checked=false; selectAll.indeterminate=false; }
+    $("v26Selection")?.classList.remove("show");
+    patchManagerSummary();
+  }
+  function attachManagerObserver(){
+    const siteSel=$("v26Site"); if(!siteSel||siteSel.dataset.v263Observed==="1") return;
+    siteSel.dataset.v263Observed="1";
+    managerObserver=new MutationObserver(()=>queueMicrotask(patchManagerOptions));
+    managerObserver.observe(siteSel,{childList:true});
   }
 
-  function updateVersion() {
-    document.title = "Rack Manager｜機櫃管理工具 V2.6.2";
-    const brand = document.querySelector(".brand p");
-    if (brand) brand.textContent = "機櫃管理工具 V2.6.2";
-    const badge = document.querySelector("#v2Hierarchy .v231-version-badge") || document.querySelector("#v2Hierarchy .badge");
-    if (badge) badge.textContent = "V2.6.2";
-  }
-
-  function attachManagerObservers() {
-    const manager = $("v26Manager");
-    if (!manager || manager.dataset.v262Observed) return;
-    manager.dataset.v262Observed = "1";
-
-    const summary = $("v26Summary");
-    if (summary) {
-      new MutationObserver(() => setTimeout(patchManagerFilters, 0)).observe(summary,{childList:true,subtree:true,characterData:true});
-    }
-
-    const siteSelect = $("v26Site");
-    if (siteSelect) {
-      new MutationObserver(() => setTimeout(patchManagerFilters, 0)).observe(siteSelect,{childList:true});
-    }
-  }
-
-  // Capture empty-directory site changes before legacy V2/V2.6 handlers rebuild
-  // their options only from racks and therefore discard the selected site.
-  document.addEventListener("change", event => {
-    const id = event.target?.id;
-    if (!id) return;
-    const state = readState();
-    if (!state) return;
-
-    if (id === "v2SiteSelect") {
-      const requested = norm(event.target.value);
-      if (requested && !siteHasRack(state, requested)) {
-        pinnedHierarchySite = requested;
-        const rooms = allRooms(state, requested);
-        pinnedHierarchyRoom = rooms.includes($("v2RoomSelect")?.value) ? $("v2RoomSelect").value : (rooms[0] || "");
-        event.stopPropagation();
-        setTimeout(()=>patchHierarchy({preserve:true}),0);
+  document.addEventListener("change",event=>{
+    if(event.target?.id==="v26Site"){
+      managerWantedSite=event.target.value;
+      managerWantedRoom="";
+      const state=readState();
+      const hasRack=!managerWantedSite || (state?.racks||[]).some(r=>siteOf(r)===managerWantedSite);
+      if(managerWantedSite && !hasRack){
+        // Capture phase prevents V2.6's racks-only fillManagerFilters() from clearing this site.
+        event.stopImmediatePropagation();
+        const roomSel=$("v26Room"),rooms=allRooms(state,managerWantedSite);
+        fillOptions(roomSel,rooms,"全部機房",rooms[0]||"");
+        managerWantedRoom=roomSel?.value||"";
+        renderEmptyManagerSite();
         return;
       }
-      pinnedHierarchySite = "";
-      pinnedHierarchyRoom = "";
-      setTimeout(()=>patchHierarchy({preserve:true}),0);
-      return;
+      setTimeout(patchManagerOptions,0);
+    } else if(event.target?.id==="v26Room"){
+      managerWantedRoom=event.target.value;
+      setTimeout(patchManagerSummary,0);
     }
+  },true);
 
-    if (id === "v2RoomSelect" && pinnedHierarchySite) {
-      pinnedHierarchyRoom = norm(event.target.value);
-      event.stopPropagation();
-      setTimeout(()=>patchHierarchy({preserve:true}),0);
-      return;
+  document.addEventListener("click",event=>{
+    if(event.target.closest?.("#v26ManageBtn")){
+      setTimeout(()=>{
+        const s=$("v26Site"),r=$("v26Room");
+        managerWantedSite=s?.value||""; managerWantedRoom=r?.value||"";
+        patchManagerOptions();
+      },40);
     }
-
-    if (id === "v26Site") {
-      const requested = norm(event.target.value);
-      if (requested && !siteHasRack(state, requested)) {
-        pinnedManagerSite = requested;
-        event.stopPropagation();
-        setTimeout(()=>{
-          patchManagerFilters();
-          rerenderManagerWithoutRebuildingFilters();
-          setTimeout(patchManagerFilters,0);
-        },0);
-        return;
-      }
-      pinnedManagerSite = "";
-      setTimeout(patchManagerFilters,0);
-    }
-  }, true);
-
-  document.addEventListener("click", event => {
-    if (event.target.closest?.("#v26ManageBtn")) {
-      setTimeout(() => { attachManagerObservers(); patchManagerFilters(); }, 40);
-    }
-    if (event.target.closest?.("#v23ManageLocations")) {
-      setTimeout(()=>patchHierarchy({preserve:true}),80);
+    if(event.target.closest?.("#v23ManageLocations") || event.target.closest?.("#v22ManageDialog")){
+      setTimeout(()=>{ refreshHierarchyPreserving(); patchManagerOptions(); },320);
     }
   });
 
-  const rackSelect = $("rackSelect");
-  rackSelect?.addEventListener("change", () => {
-    pinnedHierarchySite = "";
-    pinnedHierarchyRoom = "";
-    setTimeout(()=>patchHierarchy({preserve:false}),90);
+  // Keep manager counts correct after V2.6 re-renders cards/tabs.
+  document.addEventListener("click",event=>{
+    if(event.target.closest?.("#v26Manager")) setTimeout(()=>{ patchManagerOptions(); patchManagerSummary(); },0);
   });
 
-  const rackMeta = $("rackMeta");
-  if (rackMeta) {
-    new MutationObserver(() => setTimeout(()=>patchHierarchy({preserve:true}),0)).observe(rackMeta,{childList:true,subtree:true,characterData:true});
-  }
-
-  setTimeout(() => {
-    updateVersion();
-    patchHierarchy({preserve:true});
-    attachManagerObservers();
-    patchManagerFilters();
-  }, 0);
+  setVersion();
+  installHierarchy();
+  setTimeout(()=>{ refreshHierarchyPreserving(); patchManagerOptions(); },0);
 })();
